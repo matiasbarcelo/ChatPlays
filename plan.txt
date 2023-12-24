@@ -1,0 +1,4 @@
+the user sends a command which shows up on the queue if it is a command
+this takes time to process, so a worker thread is working on it.
+Once the command is completed, it is popped off the queue and the next command rises to the top
+until there are no more commands

@@ -1,0 +1,12 @@
+create virtual environemnt
+python -m venv (name of virtual environment)
+
+type designer.exe to open the pyqt maker thing
+
+to make a ui a programmable python file
+pyuic5 -x (name of the ui file with .ui at the end) -o (new name of the file with .py at the end)
+
+alt+f+s+a to open powershell in current window file explorer
+
+tutorial:
+https://youtu.be/5K__zwBj_nY
