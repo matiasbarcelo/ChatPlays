@@ -1,4 +1,23 @@
-the user sends a command which shows up on the queue if it is a command
-this takes time to process, so a worker thread is working on it.
-Once the command is completed, it is popped off the queue and the next command rises to the top
-until there are no more commands
+1. impliment democracy in the setup test screen
+
+2. implementing the tap, press, hold preference, as well as changing what tap, press, and hold are in the SetupTestClass using the spinboxs
+
+3. Adding Xbox and PS4 controllers to Controller class and to the setuptest Ui
+
+4. work on "command" and "input" classes and impliment to where it works at least in setuptest
+
+5. try to setup the main window a bit
+
+6. connect setup to the main window
+
+Think about:
+how all the setup test settings can update to become the main settings of the application
+How to not overwhelm the memory by creating all these command objects, figuring out how to dispose of these
+getting a cache so that the use doesnt have to reset all this shit each time he uses program
+how the ports are going to work
+
+potential democracy class? maybe that'll like clean it up
+
+Theres an issue where the setup buttons dont work after switching modes
+
+Notice that each time the govs are switched buttons are actualized, make sure this still works on all controllers
