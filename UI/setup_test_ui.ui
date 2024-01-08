@@ -873,7 +873,7 @@
        <bool>true</bool>
       </property>
      </widget>
-     <widget class="QPushButton" name="startTimerButton">
+     <widget class="QPushButton" name="demTimerButton">
       <property name="geometry">
        <rect>
         <x>140</x>
@@ -1082,17 +1082,17 @@
       </property>
      </widget>
      <zorder>doubleClickLabel</zorder>
+     <zorder>GBA_display</zorder>
+     <zorder>rButton</zorder>
+     <zorder>leftButton</zorder>
+     <zorder>rightButton</zorder>
+     <zorder>bButton</zorder>
+     <zorder>upButton</zorder>
+     <zorder>startButton</zorder>
      <zorder>aButton</zorder>
      <zorder>downButton</zorder>
-     <zorder>selectButton</zorder>
-     <zorder>GBA_display</zorder>
-     <zorder>rightButton</zorder>
-     <zorder>startButton</zorder>
-     <zorder>bButton</zorder>
      <zorder>lButton</zorder>
-     <zorder>leftButton</zorder>
-     <zorder>upButton</zorder>
-     <zorder>rButton</zorder>
+     <zorder>selectButton</zorder>
     </widget>
     <widget class="QWidget" name="page_4"/>
    </widget>

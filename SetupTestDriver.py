@@ -32,8 +32,8 @@ class Driver(Ui_test_stup_window):
         self.intValidator.setRange(0, 59)
         self.minutesBox.setValidator(self.intValidator)
         self.secondsBox.setValidator(self.intValidator)
-        self.startTimerButton.clicked.connect(lambda: self.updateMetaDemTime())
-        self.startTimerButton.clicked.connect(lambda: self.startDemTimer())
+        self.demTimerButton.clicked.connect(lambda: self.updateMetaDemTime())
+        self.demTimerButton.clicked.connect(lambda: self.demTimerButtonPressed())
 
         self.General_Setup_pushButton.clicked.connect(lambda: self.generalSetup(False))
         self.General_Setup_pushButton.clicked.connect(lambda: self.program.setupTest.setCountdown(self.Countdown_spinBox.value()))
@@ -48,6 +48,9 @@ class Driver(Ui_test_stup_window):
         self.tapSpinbox.valueChanged.connect(lambda: self.handleTimeLengthValueChanged(self.tapSpinbox))
         self.pressSpinbox.valueChanged.connect(lambda: self.handleTimeLengthValueChanged(self.pressSpinbox))
         self.holdSpinbox.valueChanged.connect(lambda: self.handleTimeLengthValueChanged(self.holdSpinbox))
+
+        # I think I can just do this
+        self.democracyTimer.timeout.connect(lambda: self.democracyTimerStep())
 
         self.actualizeButtonsForSetup()
 
@@ -119,16 +122,23 @@ class Driver(Ui_test_stup_window):
 
     def actualizeButtonsForSetup(self):
         inputs = self.program.setupTest.controller.getInputs()
-        for buttonName in inputs:
+        for buttonName in inputs.keys():
             button = getattr(self, f'{buttonName}Button')
             button.clicked.connect(lambda _, name=buttonName: self.generalSetup(True, name))
 
     # remember that this actualizes buttons for test mode not setup mode
     def actualizeButtonsForTest(self):
         inputs = self.program.setupTest.controller.getInputs()
+        government = self.program.setupTest.getMetaGov()
+        if government == 'anarchy':
+            listWidget = self.listWidget
+            edit = self.lineEdit
+        elif government == 'democracy':
+            listWidget = self.listWidget_2
+            edit = self.lineEdit_2
         for buttonName in inputs:
             button = getattr(self, f'{buttonName}Button')
-            button.clicked.connect(lambda _, name=buttonName: self.handleReturnPressed(name))
+            button.clicked.connect(lambda _, name=buttonName: self.handleReturnPressed(name, listWidget, edit))
 
     def switchButtonsMode(self):
         self.disconnectButtons()
@@ -175,52 +185,54 @@ class Driver(Ui_test_stup_window):
         if mode == 'anarchy':
             # I need to somehow stop the anarchy thread from running here
             self.program.setupTest.setAnarchyThreadStatus(False)
+            listWidget = self.listWidget
         elif mode == 'democracy':
             self.program.setupTest.setDemocracyThreadStatus(False)
+            listWidget = self.listWidget_2
         if not self.setupTimer.isActive():
-            self.setupTimer.timeout.connect(lambda: self.setupTimerStep(isSingleInput, button))
+            self.setupTimer.timeout.connect(lambda: self.setupTimerStep(isSingleInput, listWidget, button))
             self.setupTimer.start(1000)
 
-    def setupTimerStep(self, isSingleInput, button = None):
+    def setupTimerStep(self, isSingleInput, listWidget, button = None):
         countDownNum = self.program.setupTest.getCountdown()
         if countDownNum >= 0:
-            self.listWidget.addItem(str(countDownNum))
+            listWidget.addItem(str(countDownNum))
             self.program.setupTest.reduceSetupCount()
-            self.listWidget.scrollToBottom()
+            listWidget.scrollToBottom()
         else:
             if isSingleInput:
-                self.singleInputExecution(button)
+                self.singleInputExecution(listWidget, button)
             else:
                 self.notSingleInputExecution()
     
-    def singleInputExecution(self, button):
-        self.listWidget.addItem(button)
+    def singleInputExecution(self, listWidget, button):
+        listWidget.addItem(button)
         self.program.setupTest.metaCommand(button)
         self.program.setupTest.setCountdown(self.Countdown_spinBox.value())
         self.setupTimer.stop()
         self.setupTimer.timeout.disconnect()
-        self.listWidget.clear()
+        listWidget.clear()
         # I need to continue the anarchy thread running here if the setup metaGov is set to anarchy
         mode = self.program.setupTest.getMetaGov()
         if mode == 'anarchy':
             self.program.setupTest.setAnarchyThreadStatus(True)
 
-    def notSingleInputExecution(self):
+    def notSingleInputExecution(self, listWidget):
         index = self.program.setupTest.getCountdownIndex()
         inputs = list(self.program.setupTest.controller.getInputs().keys())
         if (index < len(inputs)) and (index != len(inputs) - 1):
-                self.listWidget.addItem(inputs[index])
+                listWidget.addItem(inputs[index])
                 self.program.setupTest.setCountdown(self.Countdown_spinBox.value())
                 self.program.setupTest.increaseIndexCount()
                 self.program.setupTest.metaCommand(inputs[index])
-                self.listWidget.scrollToBottom()
+                listWidget.scrollToBottom()
         else:
-            self.listWidget.addItem(inputs[index])
+            listWidget.addItem(inputs[index])
             self.program.setupTest.resetIndexCount()
             self.program.setupTest.setCountdown(self.Countdown_spinBox.value())
             self.setupTimer.stop()
             self.setupTimer.timeout.disconnect()
-            self.listWidget.clear()
+            listWidget.clear()
             # I need to continue the anarchy thread running here if the setup metaGov is set to anarchy
             mode = self.program.setupTest.getMetaGov()
             if mode == 'anarchy':
@@ -238,10 +250,13 @@ class Driver(Ui_test_stup_window):
             votesVar.setText(str(0))
             
 
-    def startDemTimer(self):
+    def demTimerButtonPressed(self):
             if not self.democracyTimer.isActive():
-                self.democracyTimer.timeout.connect(lambda: self.democracyTimerStep())
                 self.democracyTimer.start(1000)
+                self.demTimerButton.setText('Stop timer')
+            else:
+                self.democracyTimer.stop()
+                self.demTimerButton.setText('Start timer')
 
     def democracyTimerStep(self):
         demTime = self.program.setupTest.getMetaDemTime()
@@ -254,8 +269,6 @@ class Driver(Ui_test_stup_window):
                 self.countdownLabel.setText(f'Countdown: {minutes}:0{seconds}')
             self.program.setupTest.reduceDemocracyCount()
         else:
-            self.democracyTimer.stop()
-            self.democracyTimer.disconnect()
             self.updateMetaDemTime()
             demTime = self.program.setupTest.getMetaDemTime()
             minutes = demTime // 60

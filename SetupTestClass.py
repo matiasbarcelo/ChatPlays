@@ -99,13 +99,12 @@ class SetupTestClass():
     def setDefaultTimeLength(self, timeLength):
         if timeLength == 'tap':
             self.defaultTimeLength = self.tapTime
-            print(self.defaultTimeLength)
+            
         elif timeLength == 'press':
             self.defaultTimeLength = self.pressTime
-            print(self.defaultTimeLength)
+
         elif timeLength == 'hold':
             self.defaultTimeLength = self.holdTime
-            print(self.defaultTimeLength)
     
     def setTapTime(self, time):
         self.tapTime = time
