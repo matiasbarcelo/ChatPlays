@@ -10,3 +10,7 @@ alt+f+s+a to open powershell in current window file explorer
 
 tutorial:
 https://youtu.be/5K__zwBj_nY
+
+On mac os:
+qt must be installed (brew install qt)
+pip install pyqt5tools 
