@@ -1,0 +1,17 @@
+{
+
+    "controller": "GBAController",
+
+    "metaMode": "setup",
+    "government": "anarchy",
+    "testTime": 5,
+    "countdown": 5,
+    
+    "anarchyThreadStatus": true,
+    "democracyThreadStatus": false,
+    "democracyTime": 15,
+    "tapTime": 0.3,
+    "pressTime": 0.5,
+    "holdTime": 1,
+    "defaultTimeLengthStr": 0.5
+}

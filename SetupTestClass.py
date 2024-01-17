@@ -1,22 +1,26 @@
-import time
-from Controller import GBAController
-from threading import Thread
+import Controller
+import logging
+from input import Input
+import json
 
 class SetupTestClass():
     
     def __init__(self):
+        with open('setupTestSettings.json', "r") as f:
+            data = json.load(f)
+
+        self.controller = Controller.GBAController()
+        self.maxRepeatAmount = 9
         
-        self.controller = GBAController()
-        
-        self.metaMode = 'setup'
-        self.government = 'anarchy'
-        self.testTime = 5
-        self.countdown = 5
-        self.voteList = {}
+        self.metaMode = data.get('metaMode', 'setup')
+        self.government = data.get('government', 'anarchy')
+        self.testTime = data.get('testTime', 5)
+        self.countdown = data.get('countdown', 5)
+        self.voteList = data.get('voteList', {})
 
         # This is a Qt item, this serves the purpose of not letting SetupTestDriver.democracyThread run up the vote infinitely
-        self.lastDemocracyItem = None
-        self.lastDemocracyWinner = 'None'
+        self.lastDemocracyItem = data.get('lastDemocracyItem', None)
+        self.lastDemocracyWinner = data.get('lastDemocracyWinner', 'None')
 
         """
         These are fields only exist as workarounds for SetupTestDriver.py. Once a solution is found these should be eliminated ideally.
@@ -27,15 +31,15 @@ class SetupTestClass():
         self.anarchyThreadStatus only exists because I couldn't figure out how to pause
         and resume the anarchy thread in SetupTestDriver.
         """
-        self.countdownIndex = 0
-        self.anarchyThreadStatus = True
-        self.democracyThreadStatus = False
+        self.countdownIndex = data.get('countdownIndex', 0)
+        self.anarchyThreadStatus = data.get('anarchyThreadStatus', True)
+        self.democracyThreadStatus = data.get('democracyThreadStatus', False)
 
-        self.democracyTime = 15
-        self.tapTime = 0.3
-        self.pressTime = 0.5
-        self.holdTime = 1
-        self.defaultTimeLength = self.pressTime
+        self.democracyTime = data.get('democracyTime', 15)
+        self.tapTime = data.get('tapTime', 0.3)
+        self.pressTime = data.get('pressTime', 0.5)
+        self.holdTime = data.get('holdTime', 1)
+        self.defaultTimeLength = data.get('defaultTimeLength', self.pressTime)
     
     """
     Right now the way it works is that SetupTestDriver.handleReturnPressed(input) checks to see if the command is an input on the controller.
@@ -48,16 +52,65 @@ class SetupTestClass():
     Finish this
     """
 
-    def metaCommand(self, command):
-        if self.government == 'anarchy':
-            print(self.defaultTimeLength)
-            self.controller.pressButton(command, self.defaultTimeLength)
-        elif self.government == 'democracy':
-            if command not in self.voteList.keys():
-                 self.voteList[command] = 1
-            else:
-                self.voteList[command] += 1
+    def changeController(self, controller):
+        del self.controller
+        if controller == 'GBA':
+            self.controller = Controller.GBAController() 
+        elif controller == 'Xbox 360':
+            self.controller = Controller.XboxController()
+        elif controller == 'PlayStation':
+            self.controller = Controller.PlayStationController()
+
+    def metaCommand(self, inputObj):
+        logging.debug(f' metaCommand() recieved {inputObj}')
     
+        if inputObj.getTimeLength() and inputObj.getRepeatAmount():
+            logging.debug(f' metaCommand() fired, timeLength = {inputObj.getTimeLength()} repeatAmount = {inputObj.getRepeatAmount()}')
+            self.controller.pressButton(inputObj.getInput(), self.getTimeLengthForStr(inputObj.getTimeLength()), inputObj.getRepeatAmount())
+        
+        elif inputObj.getTimeLength():
+            testForTimeLength = self.getTimeLengthForStr(inputObj.getTimeLength())
+            logging.debug(f' metaCommand() fired, timeLength = {inputObj.getTimeLength()} repeatAmount = None, testForTimeLength = {testForTimeLength}')    
+            self.controller.pressButton(inputObj.getInput(), self.getTimeLengthForStr(inputObj.getTimeLength()))
+        
+        elif inputObj.getRepeatAmount():
+            logging.debug(f' metaCommand() fired, timeLength = default repeatAmount = {inputObj.getRepeatAmount()}')  
+            self.controller.pressButton(inputObj.getInput(), self.getDefualtTimeLength(), inputObj.getRepeatAmount())  
+        
+        logging.debug(f' metaCommand() fired, timeLength = default repeatAmount = None')
+        self.controller.pressButton(inputObj.getInput(), self.defaultTimeLength)
+
+
+    def adjustVoteList(self, text):
+        if text not in self.voteList.keys():
+                self.voteList[text] = 1
+        else:
+            self.voteList[text] += 1
+    
+    def save_to_json(self, filename):
+        # Collect the field values into a dictionary
+        data = {
+            "metaMode": self.metaMode,
+            "government": self.government,
+            "testTime": self.testTime,
+            "countdown": self.countdown,
+            "voteList": self.voteList,
+            "lastDemocracyItem": self.lastDemocracyItem,
+            "lastDemocracyWinner": self.lastDemocracyWinner,
+            "countdownIndex": self.countdownIndex,
+            "anarchyThreadStatus": self.anarchyThreadStatus,
+            "democracyThreadStatus": self.democracyThreadStatus,
+            "democracyTime": self.democracyTime,
+            "tapTime": self.tapTime,
+            "pressTime": self.pressTime,
+            "holdTime": self.holdTime,
+            "defaultTimeLength": self.defaultTimeLength,
+        }
+
+        # Write the data to a JSON file
+        with open(filename, "w") as f:
+            json.dump(data, f)
+
     def reduceSetupCount(self):
         self.countdown -= 1
 
@@ -76,7 +129,7 @@ class SetupTestClass():
     # set functions
 
     def setMetaMode(self, mode):
-        return mode
+        self.metaMode = mode
     
     def setMetaGov(self, gov):
         self.government = gov
@@ -118,6 +171,9 @@ class SetupTestClass():
     def setMetaDemTime(self, time):
         self.democracyTime = time
 
+    def setMaxRepeatAmount(self, n):
+        self.maxRepeatAmount = n
+
     # get functions
 
     def getMetaMode(self):
@@ -128,6 +184,9 @@ class SetupTestClass():
 
     def getCountdown(self):
         return self.countdown
+    
+    def getController(self):
+        return self.controller
     
     def getCountdownIndex(self): 
         return self.countdownIndex
@@ -142,6 +201,16 @@ class SetupTestClass():
             return 'press'
         elif self.defaultTimeLength == self.holdTime:
             return 'hold'
+        
+    def getTimeLengthForStr(self, timeLength):
+        if timeLength == 't':
+            return self.getTapTime()
+            
+        elif timeLength == 'p':
+            return self.getPressTime()
+
+        elif timeLength == 'h':
+            return self.getHoldTime()
 
     def getTapTime(self):
         return self.tapTime
@@ -166,3 +235,11 @@ class SetupTestClass():
 
     def getMetaDemTime(self):
         return self.democracyTime
+    
+    def getMaxRepeatAmount(self):
+        return self.maxRepeatAmount
+    
+if __name__ == '__main__':
+    test = SetupTestClass()
+    inputObj = Input('a', test.getController())
+    test.metaCommand(inputObj)

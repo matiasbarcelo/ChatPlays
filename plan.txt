@@ -5,6 +5,9 @@ good
 
 3. Adding Xbox and PS4 controllers to Controller class and to the setuptest Ui
 
+I have to actualze and deactualize the controllers
+I have to figure out how metaCommand is going to work
+
 4. work on "command" and "input" classes and impliment to where it works at least in setuptest
 
 5. try to setup the main window a bit
@@ -25,3 +28,4 @@ Theres an issue where the setup buttons dont work after switching modes
 
 Notice that each time the govs are switched buttons are actualized, make sure this still works on all controllers
 
+remember defaultTimeLength in .json file could cause a problem when reopening
