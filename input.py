@@ -12,39 +12,36 @@ class InputSequence():
         
         
 class Input():
-    def __init__(self, string, controller):
+    def __init__(self, string, controller, valueClass = None):
         self.input = None
         self.timeLength = None
         self.repeatAmount = None
         self.isValid = None
         self.stringRecieved = string
 
-        self.decipherString(string, controller)
+        self.decipherString(string, controller, valueClass)
 
-    def decipherString(self, string, controller):
+    def decipherString(self, string, controller, valueClass):
+        
+        maxTimeLength = valueClass.getMaxTimeLength()
+        maxRepeatAmount = valueClass.getMaxRepeatAmount()
 
-        additionForSpecialChars = r''
-
-        specialChars = ['t','p','h']
-    
         # Regular expression for joystick float
-        joystickFloatVals = r'(?P<analogFloatVal>\((?P<xVal>(-?1(\.0{0,2})?)|(-?0?(\.\d{0,2})?))?,(?P<yVal>(-?1(\.0{0,2})?)|(-?0?(\.\d{0,2})?))?\))?'
+        joystickFloatVals = r'(?P<analogFloatVal>\((?P<xFloatVal>(-?1(\.0{0,2})?)|(-?0?(\.\d{0,2})?))?,(?P<yFloatVal>(-?1(\.0{0,2})?)|(-?0?(\.\d{0,2})?))?\))'
 
-        # # Regular expression for the normal joystick up to 255
-        # joystickVals = r'\((?P<xVal>[0-255])?,(?P<yVal>[0-255])?\)'
-            
-        # if controller.isAnalog():
-        #     self.analogTester
+        # # Regular expression for int joystick val up to 255
+        joystickIntVals = r'(?P<analogIntVal>\((?P<xIntVal>[0-2]?[0-4]?[0-9]|25[0-5])?,(?P<yIntVal>[0-2]?[0-9]?[0-9]|25[0-5])?\))'
 
-        timeLengthTest = additionForSpecialChars + r'(?P<timeLength>^[tph])?'
+        joystickVals = r'(?P<analogVal>' + joystickFloatVals + '|' + joystickIntVals + ')?'
+
+        timeLengthStr = r'(?P<timeLengthStr>^[tph])?'
+        timeLengthFloat = r'(?P<timeLengthFloat>(0(\.\d*)?|([1-{firstDigit}]\d*(\.\d*)?|{maxTimeLength}(\.0*)?)))'.format(firstDigit=maxTimeLength//10, maxTimeLength=maxTimeLength)
+
+        timeLengthTest = 
         repeatAmountTest = r'(?P<repeatAmount>[1-9]$)?'
         inputs = r'(?P<input>' + controller.getRegexStr() + ')'
 
-        if controller.isAnalog():
-            regexExpression = timeLengthTest + joystickFloatVals + inputs + repeatAmountTest
-
-        else:
-            regexExpression = timeLengthTest + inputs + repeatAmountTest
+        regexExpression = timeLengthTest + joystickVals + inputs + repeatAmountTest
 
         fullTest = re.compile(regexExpression)
         logging.debug(f'regexExpression {regexExpression}')
@@ -53,7 +50,7 @@ class Input():
         
         self.input = test.group('input')
         self.repeatAmount = test.group('repeatAmount')
-        self.timeLength = test.group('timeLength')
+        self.timeLength = test.group('timeLengthStr')
         logging.debug(f' Input obj groupdict = {test.groupdict()}, timeLength = {self.timeLength}, input = {self.input}, repeatAmount = {self.repeatAmount}')
         
         return
@@ -75,5 +72,5 @@ class Input():
 
 if __name__ == '__main__':
     testController = Controller.XboxController()
-    testStr = 't(.69,-0.59)lstick'
+    testStr = 'hhome9'
     testObject = Input(testStr, testController)

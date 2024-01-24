@@ -1,6 +1,7 @@
 {
 
     "controller": "GBAController",
+    "maxRepeatAmount" : 9,
 
     "metaMode": "setup",
     "government": "anarchy",

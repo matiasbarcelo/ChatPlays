@@ -10,13 +10,13 @@ class SetupTestClass():
             data = json.load(f)
 
         self.controller = Controller.GBAController()
-        self.maxRepeatAmount = 9
+        self.maxRepeatAmount = data.get('maxRepeatAmount', 9)
         
         self.metaMode = data.get('metaMode', 'setup')
         self.government = data.get('government', 'anarchy')
         self.testTime = data.get('testTime', 5)
         self.countdown = data.get('countdown', 5)
-        self.voteList = data.get('voteList', {})
+        self.voteList = {}
 
         # This is a Qt item, this serves the purpose of not letting SetupTestDriver.democracyThread run up the vote infinitely
         self.lastDemocracyItem = data.get('lastDemocracyItem', None)
@@ -90,21 +90,18 @@ class SetupTestClass():
     def save_to_json(self, filename):
         # Collect the field values into a dictionary
         data = {
+            "controller": self.controller,
             "metaMode": self.metaMode,
             "government": self.government,
             "testTime": self.testTime,
             "countdown": self.countdown,
-            "voteList": self.voteList,
-            "lastDemocracyItem": self.lastDemocracyItem,
-            "lastDemocracyWinner": self.lastDemocracyWinner,
-            "countdownIndex": self.countdownIndex,
             "anarchyThreadStatus": self.anarchyThreadStatus,
             "democracyThreadStatus": self.democracyThreadStatus,
             "democracyTime": self.democracyTime,
             "tapTime": self.tapTime,
             "pressTime": self.pressTime,
             "holdTime": self.holdTime,
-            "defaultTimeLength": self.defaultTimeLength,
+            "defaultTimeLengthStr": self.getDefualtTimeLengthStr()
         }
 
         # Write the data to a JSON file
