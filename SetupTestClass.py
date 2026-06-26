@@ -6,11 +6,16 @@ import json
 class SetupTestClass():
     
     def __init__(self):
-        with open('setupTestSettings.json', "r") as f:
-            data = json.load(f)
+        settings_path = 'setupTestSettings.json'
+        try:
+            with open(settings_path, "r") as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {}
 
         self.controller = Controller.GBAController()
         self.maxRepeatAmount = data.get('maxRepeatAmount', 9)
+        self.maxTimeLength = data.get('maxTimeLength', 15)
         
         self.metaMode = data.get('metaMode', 'setup')
         self.government = data.get('government', 'anarchy')
@@ -63,22 +68,37 @@ class SetupTestClass():
 
     def metaCommand(self, inputObj):
         logging.debug(f' metaCommand() recieved {inputObj}')
-    
+
         if inputObj.getTimeLength() and inputObj.getRepeatAmount():
-            logging.debug(f' metaCommand() fired, timeLength = {inputObj.getTimeLength()} repeatAmount = {inputObj.getRepeatAmount()}')
-            self.controller.pressButton(inputObj.getInput(), self.getTimeLengthForStr(inputObj.getTimeLength()), inputObj.getRepeatAmount())
-        
+            logging.debug(
+                f' metaCommand() fired, timeLength = {inputObj.getTimeLength()} repeatAmount = {inputObj.getRepeatAmount()}'
+            )
+            self.controller.pressButton(
+                inputObj.getInput(),
+                self.getTimeLengthForStr(inputObj.getTimeLength()),
+                inputObj.getRepeatAmount(),
+            )
         elif inputObj.getTimeLength():
             testForTimeLength = self.getTimeLengthForStr(inputObj.getTimeLength())
-            logging.debug(f' metaCommand() fired, timeLength = {inputObj.getTimeLength()} repeatAmount = None, testForTimeLength = {testForTimeLength}')    
-            self.controller.pressButton(inputObj.getInput(), self.getTimeLengthForStr(inputObj.getTimeLength()))
-        
+            logging.debug(
+                f' metaCommand() fired, timeLength = {inputObj.getTimeLength()} repeatAmount = None, testForTimeLength = {testForTimeLength}'
+            )
+            self.controller.pressButton(
+                inputObj.getInput(),
+                self.getTimeLengthForStr(inputObj.getTimeLength()),
+            )
         elif inputObj.getRepeatAmount():
-            logging.debug(f' metaCommand() fired, timeLength = default repeatAmount = {inputObj.getRepeatAmount()}')  
-            self.controller.pressButton(inputObj.getInput(), self.getDefualtTimeLength(), inputObj.getRepeatAmount())  
-        
-        logging.debug(f' metaCommand() fired, timeLength = default repeatAmount = None')
-        self.controller.pressButton(inputObj.getInput(), self.defaultTimeLength)
+            logging.debug(
+                f' metaCommand() fired, timeLength = default repeatAmount = {inputObj.getRepeatAmount()}'
+            )
+            self.controller.pressButton(
+                inputObj.getInput(),
+                self.getDefualtTimeLength(),
+                inputObj.getRepeatAmount(),
+            )
+        else:
+            logging.debug(f' metaCommand() fired, timeLength = default repeatAmount = None')
+            self.controller.pressButton(inputObj.getInput(), self.defaultTimeLength)
 
 
     def adjustVoteList(self, text):
@@ -140,8 +160,8 @@ class SetupTestClass():
     def setDemocracyThreadStatus(self, bool):
         self.democracyThreadStatus = bool
     
-    def setLastDemocracyItem(self, QtItem):
-        self.lastDemocracyItem = QtItem
+    def setLastDemocracyItem(self, item):
+        self.lastDemocracyItem = item
 
     def setLastDemocracyWinner(self, command):
         self.lastDemocracyWinner = command
@@ -235,6 +255,9 @@ class SetupTestClass():
     
     def getMaxRepeatAmount(self):
         return self.maxRepeatAmount
+    
+    def getMaxTimeLength(self):
+        return self.maxTimeLength
     
 if __name__ == '__main__':
     test = SetupTestClass()

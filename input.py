@@ -12,17 +12,17 @@ class InputSequence():
         
         
 class Input():
-    def __init__(self, string, controller, valueClass = None):
+    def __init__(self, string, valueClass = None):
         self.input = None
         self.timeLength = None
         self.repeatAmount = None
         self.isValid = None
         self.stringRecieved = string
 
-        self.decipherString(string, controller, valueClass)
+        self.decipherString(string, valueClass)
 
-    def decipherString(self, string, controller, valueClass):
-        
+    def decipherString(self, string, valueClass):
+        controller = valueClass.getController()
         maxTimeLength = valueClass.getMaxTimeLength()
         maxRepeatAmount = valueClass.getMaxRepeatAmount()
 
@@ -34,10 +34,11 @@ class Input():
 
         joystickVals = r'(?P<analogVal>' + joystickFloatVals + '|' + joystickIntVals + ')?'
 
-        timeLengthStr = r'(?P<timeLengthStr>^[tph])?'
-        timeLengthFloat = r'(?P<timeLengthFloat>(0(\.\d*)?|([1-{firstDigit}]\d*(\.\d*)?|{maxTimeLength}(\.0*)?)))'.format(firstDigit=maxTimeLength//10, maxTimeLength=maxTimeLength)
-
-        timeLengthTest = 
+        timeLengthStr = r'(?P<timeLengthStr>[tph])'
+        timeLengthFloat = r'(?P<timeLengthFloat>[{firstDigit}][0-{secondDigit}])'.format(
+            firstDigit=maxTimeLength // 10, secondDigit=maxTimeLength % 10
+        )
+        timeLengthTest = rf'(?:{timeLengthStr}{timeLengthFloat}?)?'
         repeatAmountTest = r'(?P<repeatAmount>[1-9]$)?'
         inputs = r'(?P<input>' + controller.getRegexStr() + ')'
 
@@ -47,7 +48,9 @@ class Input():
         logging.debug(f'regexExpression {regexExpression}')
         
         test = fullTest.match(string)
-        
+        if test is None:
+            raise ValueError(f"Input string did not match controller pattern: {string!r}")
+
         self.input = test.group('input')
         self.repeatAmount = test.group('repeatAmount')
         self.timeLength = test.group('timeLengthStr')
@@ -71,6 +74,7 @@ class Input():
         return int(self.repeatAmount)
 
 if __name__ == '__main__':
-    testController = Controller.XboxController()
+    from SetupTestClass import SetupTestClass
+    testSetup = SetupTestClass()
     testStr = 'hhome9'
-    testObject = Input(testStr, testController)
+    testObject = Input(testStr, testSetup)

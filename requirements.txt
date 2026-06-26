@@ -1,0 +1,4 @@
+pynput; platform_system == "Darwin"
+fastapi
+uvicorn[standard]
+vgamepad; platform_system != "Darwin"

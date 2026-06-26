@@ -1,0 +1,16 @@
+{
+    "GBAController": {
+        "a": "z",
+        "b": "x",
+        "l": "a",
+        "r": "s",
+        "select": "backspace",
+        "start": "enter",
+        "up": "up",
+        "down": "down",
+        "left": "left",
+        "right": "right"
+    },
+    "XboxController": {},
+    "PlayStationController": {}
+}

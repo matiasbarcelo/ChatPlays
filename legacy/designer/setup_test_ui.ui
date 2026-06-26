@@ -35,15 +35,15 @@
         <number>0</number>
        </property>
        <widget class="QWidget" name="anarchyPage">
-        <widget class="QLineEdit" name="lineEdit">
-         <property name="geometry">
-          <rect>
-           <x>30</x>
-           <y>580</y>
-           <width>321</width>
-           <height>31</height>
-          </rect>
-         </property>
+       <widget class="QLineEdit" name="lineEdit">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>440</y>
+          <width>321</width>
+          <height>31</height>
+         </rect>
+        </property>
          <property name="placeholderText">
           <string>Type in Inputs</string>
          </property>
@@ -67,15 +67,15 @@
           <bool>true</bool>
          </property>
         </widget>
-        <widget class="QListWidget" name="listWidget">
-         <property name="geometry">
-          <rect>
-           <x>30</x>
-           <y>60</y>
-           <width>321</width>
-           <height>511</height>
-          </rect>
-         </property>
+       <widget class="QListWidget" name="listWidget">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>10</y>
+          <width>321</width>
+          <height>420</height>
+         </rect>
+        </property>
          <property name="font">
           <font>
            <family>Press Start 2P</family>
@@ -100,20 +100,17 @@
            <pointsize>16</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>Anarchy</string>
          </property>
         </widget>
        </widget>
        <widget class="QWidget" name="democracyPage">
-        <widget class="QLabel" name="position4Votes">
-         <property name="geometry">
-          <rect>
-           <x>275</x>
-           <y>120</y>
+       <widget class="QLabel" name="position4Votes">
+        <property name="geometry">
+         <rect>
+          <x>275</x>
+          <y>80</y>
            <width>61</width>
            <height>21</height>
           </rect>
@@ -124,9 +121,6 @@
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>0</string>
          </property>
@@ -134,11 +128,11 @@
           <set>Qt::AlignBottom|Qt::AlignRight|Qt::AlignTrailing</set>
          </property>
         </widget>
-        <widget class="QLabel" name="minutesLabel">
-         <property name="geometry">
-          <rect>
-           <x>80</x>
-           <y>50</y>
+       <widget class="QLabel" name="minutesLabel">
+        <property name="geometry">
+         <rect>
+          <x>80</x>
+          <y>10</y>
            <width>91</width>
            <height>21</height>
           </rect>
@@ -149,18 +143,15 @@
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>Minutes</string>
          </property>
         </widget>
-        <widget class="QLabel" name="position3Votes">
-         <property name="geometry">
-          <rect>
-           <x>275</x>
-           <y>100</y>
+       <widget class="QLabel" name="position3Votes">
+        <property name="geometry">
+         <rect>
+          <x>275</x>
+          <y>60</y>
            <width>61</width>
            <height>21</height>
           </rect>
@@ -171,9 +162,6 @@
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>0</string>
          </property>
@@ -181,11 +169,11 @@
           <set>Qt::AlignBottom|Qt::AlignRight|Qt::AlignTrailing</set>
          </property>
         </widget>
-        <widget class="QLabel" name="countdownLabel">
-         <property name="geometry">
-          <rect>
-           <x>70</x>
-           <y>80</y>
+       <widget class="QLabel" name="countdownLabel">
+        <property name="geometry">
+         <rect>
+          <x>70</x>
+          <y>40</y>
            <width>201</width>
            <height>21</height>
           </rect>
@@ -196,31 +184,28 @@
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>Countdown: 0:15</string>
          </property>
         </widget>
-        <widget class="QLineEdit" name="lineEdit_2">
-         <property name="geometry">
-          <rect>
-           <x>20</x>
-           <y>570</y>
-           <width>321</width>
-           <height>31</height>
-          </rect>
-         </property>
+       <widget class="QLineEdit" name="lineEdit_2">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>440</y>
+          <width>321</width>
+          <height>31</height>
+         </rect>
+        </property>
          <property name="placeholderText">
           <string>Type in Inputs</string>
          </property>
         </widget>
-        <widget class="QLabel" name="position1Votes">
-         <property name="geometry">
-          <rect>
-           <x>105</x>
-           <y>100</y>
+       <widget class="QLabel" name="position1Votes">
+        <property name="geometry">
+         <rect>
+          <x>105</x>
+          <y>60</y>
            <width>51</width>
            <height>21</height>
           </rect>
@@ -231,9 +216,6 @@
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>0</string>
          </property>
@@ -241,11 +223,11 @@
           <set>Qt::AlignBottom|Qt::AlignRight|Qt::AlignTrailing</set>
          </property>
         </widget>
-        <widget class="QLineEdit" name="minutesBox">
-         <property name="geometry">
-          <rect>
-           <x>30</x>
-           <y>50</y>
+       <widget class="QLineEdit" name="minutesBox">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>10</y>
            <width>41</width>
            <height>16</height>
           </rect>
@@ -284,18 +266,15 @@
            <pointsize>16</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>Democracy</string>
          </property>
         </widget>
-        <widget class="QLabel" name="position2Votes">
-         <property name="geometry">
-          <rect>
-           <x>105</x>
-           <y>120</y>
+       <widget class="QLabel" name="position2Votes">
+        <property name="geometry">
+         <rect>
+          <x>105</x>
+          <y>80</y>
            <width>51</width>
            <height>21</height>
           </rect>
@@ -306,9 +285,6 @@
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>0</string>
          </property>
@@ -316,11 +292,11 @@
           <set>Qt::AlignBottom|Qt::AlignRight|Qt::AlignTrailing</set>
          </property>
         </widget>
-        <widget class="QLabel" name="position3Input">
-         <property name="geometry">
-          <rect>
-           <x>200</x>
-           <y>100</y>
+       <widget class="QLabel" name="position3Input">
+        <property name="geometry">
+         <rect>
+          <x>200</x>
+          <y>60</y>
            <width>91</width>
            <height>21</height>
           </rect>
@@ -331,18 +307,15 @@
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>empty</string>
          </property>
         </widget>
-        <widget class="QLineEdit" name="secondsBox">
-         <property name="geometry">
-          <rect>
-           <x>180</x>
-           <y>50</y>
+       <widget class="QLineEdit" name="secondsBox">
+        <property name="geometry">
+         <rect>
+          <x>180</x>
+          <y>10</y>
            <width>41</width>
            <height>16</height>
           </rect>
@@ -363,15 +336,15 @@
           <string/>
          </property>
         </widget>
-        <widget class="QListWidget" name="listWidget_2">
-         <property name="geometry">
-          <rect>
-           <x>20</x>
-           <y>200</y>
-           <width>321</width>
-           <height>361</height>
-          </rect>
-         </property>
+       <widget class="QListWidget" name="listWidget_2">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>170</y>
+          <width>321</width>
+          <height>250</height>
+         </rect>
+        </property>
          <property name="font">
           <font>
            <family>Press Start 2P</family>
@@ -381,11 +354,11 @@
           <bool>false</bool>
          </property>
         </widget>
-        <widget class="QLabel" name="secondsLabel">
-         <property name="geometry">
-          <rect>
-           <x>230</x>
-           <y>50</y>
+       <widget class="QLabel" name="secondsLabel">
+        <property name="geometry">
+         <rect>
+          <x>230</x>
+          <y>10</y>
            <width>91</width>
            <height>21</height>
           </rect>
@@ -395,19 +368,16 @@
            <family>Press Start 2P</family>
            <pointsize>10</pointsize>
           </font>
-         </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
          </property>
          <property name="text">
           <string>Seconds</string>
          </property>
         </widget>
-        <widget class="QLabel" name="position1Input">
-         <property name="geometry">
-          <rect>
-           <x>20</x>
-           <y>100</y>
+       <widget class="QLabel" name="position1Input">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>60</y>
            <width>91</width>
            <height>21</height>
           </rect>
@@ -418,18 +388,15 @@
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>empty</string>
          </property>
         </widget>
-        <widget class="QLabel" name="position4Input">
-         <property name="geometry">
-          <rect>
-           <x>200</x>
-           <y>120</y>
+       <widget class="QLabel" name="position4Input">
+        <property name="geometry">
+         <rect>
+          <x>200</x>
+          <y>80</y>
            <width>91</width>
            <height>21</height>
           </rect>
@@ -440,18 +407,15 @@
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>empty</string>
          </property>
         </widget>
-        <widget class="QLabel" name="position2Input">
-         <property name="geometry">
-          <rect>
-           <x>20</x>
-           <y>120</y>
+       <widget class="QLabel" name="position2Input">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>80</y>
            <width>91</width>
            <height>21</height>
           </rect>
@@ -462,18 +426,15 @@
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
-         </property>
          <property name="text">
           <string>empty</string>
          </property>
         </widget>
-        <widget class="QLabel" name="latestWinnerLabel">
-         <property name="geometry">
-          <rect>
-           <x>40</x>
-           <y>150</y>
+       <widget class="QLabel" name="latestWinnerLabel">
+        <property name="geometry">
+         <rect>
+          <x>40</x>
+          <y>110</y>
            <width>281</width>
            <height>21</height>
           </rect>
@@ -483,9 +444,6 @@
            <family>Press Start 2P</family>
            <pointsize>10</pointsize>
           </font>
-         </property>
-         <property name="styleSheet">
-          <string notr="true">color: rgb(0, 0, 0)</string>
          </property>
          <property name="text">
           <string>Latest Winner: None</string>
@@ -513,13 +471,13 @@
           <bool>true</bool>
          </property>
         </widget>
-        <widget class="QPushButton" name="demTimerButton">
-         <property name="geometry">
-          <rect>
-           <x>140</x>
-           <y>170</y>
-           <width>75</width>
-           <height>23</height>
+       <widget class="QPushButton" name="demTimerButton">
+        <property name="geometry">
+         <rect>
+          <x>140</x>
+          <y>130</y>
+           <width>120</width>
+           <height>32</height>
           </rect>
          </property>
          <property name="text">
@@ -537,7 +495,7 @@
       <x>20</x>
       <y>40</y>
       <width>201</width>
-      <height>111</height>
+      <height>155</height>
      </rect>
     </property>
     <layout class="QVBoxLayout" name="verticalLayout_2">
@@ -548,9 +506,6 @@
          <family>Press Start 2P</family>
          <pointsize>10</pointsize>
         </font>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">color: rgb(0, 0, 0)</string>
        </property>
        <property name="text">
         <string>Setup or Test?</string>
@@ -568,9 +523,6 @@
          <pointsize>10</pointsize>
         </font>
        </property>
-       <property name="styleSheet">
-        <string notr="true">color: rgb(0, 0, 0)</string>
-       </property>
        <property name="text">
         <string>Government</string>
        </property>
@@ -583,9 +535,6 @@
          <family>Press Start 2P</family>
          <pointsize>10</pointsize>
         </font>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">color: rgb(0, 0, 0)</string>
        </property>
        <property name="text">
         <string>Controller</string>
@@ -611,9 +560,9 @@
     <property name="geometry">
      <rect>
       <x>20</x>
-      <y>160</y>
+      <y>205</y>
       <width>416</width>
-      <height>51</height>
+      <height>58</height>
      </rect>
     </property>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
@@ -631,9 +580,6 @@
          <family>Press Start 2P</family>
          <pointsize>10</pointsize>
         </font>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">color: rgb(0, 0, 0)</string>
        </property>
        <property name="text">
         <string>Tap</string>
@@ -680,9 +626,6 @@
          <pointsize>10</pointsize>
         </font>
        </property>
-       <property name="styleSheet">
-        <string notr="true">color: rgb(0, 0, 0)</string>
-       </property>
        <property name="text">
         <string>Press</string>
        </property>
@@ -719,9 +662,6 @@
          <pointsize>10</pointsize>
         </font>
        </property>
-       <property name="styleSheet">
-        <string notr="true">color: rgb(0, 0, 0)</string>
-       </property>
        <property name="text">
         <string>Hold</string>
        </property>
@@ -751,7 +691,7 @@
       <x>230</x>
       <y>40</y>
       <width>201</width>
-      <height>111</height>
+      <height>155</height>
      </rect>
     </property>
     <layout class="QVBoxLayout" name="verticalLayout_3">
@@ -842,9 +782,9 @@
     <property name="geometry">
      <rect>
       <x>20</x>
-      <y>220</y>
+      <y>275</y>
       <width>411</width>
-      <height>371</height>
+      <height>361</height>
      </rect>
     </property>
     <layout class="QGridLayout" name="gridLayout">
@@ -1506,7 +1446,6 @@
     </layout>
    </widget>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
  </widget>
  <resources/>
  <connections/>

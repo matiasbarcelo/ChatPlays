@@ -47,7 +47,7 @@ class ChatPlays():
         self.government= gov
     
     def setDemTime(self, time):
-        self.demTime = time
+        self.democracyTime = time
 
     def setPressTime(self,time):
         self.pressTime = time
@@ -79,7 +79,7 @@ class ChatPlays():
         return self.government
     
     def getDemTime(self):
-        return self.demTime
+        return self.democracyTime
 
     def getPressTime(self):
         return self.pressTime

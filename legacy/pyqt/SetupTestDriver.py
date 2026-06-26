@@ -1,5 +1,12 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
-from SetupTestUi import Ui_test_stup_window
+
+from repo_paths import ensure_repo_on_path
+
+ensure_repo_on_path()
+
+from setupTestUi import Ui_test_stup_window
+from ui_theme import apply_app_theme, fit_push_button, fit_spin_box
+from ui_responsive import configure_setup_window, is_on_fixed_canvas
 from threading import Thread
 from ChatPlays import ChatPlays
 from input import Input
@@ -27,6 +34,18 @@ class Driver(Ui_test_stup_window):
         self.democracyTimer = QtCore.QTimer()
 
     def actualize(self):
+        configure_setup_window(self, self.centralwidget.window())
+
+        for widget in self.__dict__.values():
+            if not isinstance(widget, QtWidgets.QWidget):
+                continue
+            if is_on_fixed_canvas(widget):
+                continue
+            if isinstance(widget, QtWidgets.QPushButton):
+                fit_push_button(widget)
+            elif isinstance(widget, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
+                fit_spin_box(widget)
+
         self.setupOrTestComboBox.currentTextChanged.connect(lambda: self.switchMetaMode())
         
         self.testGovComboBox.currentTextChanged.connect(lambda: self.program.setupTest.setMetaGov(self.testGovComboBox.currentText().lower()))
@@ -463,6 +482,7 @@ class Driver(Ui_test_stup_window):
 if __name__ == "__main__":
     import sys
     app = QtWidgets.QApplication(sys.argv)
+    apply_app_theme(app)
     test_stup_window = QtWidgets.QMainWindow()
     ui = Driver()
     ui.setupUi(test_stup_window)
