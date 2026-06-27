@@ -78,10 +78,10 @@ function createSetupWindow() {
     return;
   }
   setupWindow = new BrowserWindow({
-    width: 860,
-    height: 680,
-    minWidth: 780,
-    minHeight: 600,
+    width: 1060,
+    height: 800,
+    minWidth: 900,
+    minHeight: 740,
     title: "Test/Setup ChatPlays Program",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

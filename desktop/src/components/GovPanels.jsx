@@ -2,14 +2,31 @@ import { useEffect, useRef } from "react";
 import anarchyIcon from "@assets/anarchy.png";
 import democracyIcon from "@assets/democracy.png";
 
-export function GovHeader({ government }) {
+export function GovHeader({ government, chatTheme, onThemeToggle }) {
   const isAnarchy = government === "anarchy";
   return (
-    <div className="row chat-panel__header">
-      <img src={isAnarchy ? anarchyIcon : democracyIcon} alt="" width={44} height={44} />
-      <strong style={{ fontSize: "1.35rem" }}>
-        {isAnarchy ? "Anarchy" : "Democracy"}
-      </strong>
+    <div className="chat-panel__header">
+      {onThemeToggle && (
+        <button
+          type="button"
+          className="chat-panel__theme-btn"
+          onClick={onThemeToggle}
+        >
+          {chatTheme === "dark" ? "Dark" : "Light"}
+        </button>
+      )}
+      <div className="chat-panel__gov-label">
+        <img
+          src={isAnarchy ? anarchyIcon : democracyIcon}
+          alt=""
+          width={44}
+          height={44}
+          className={isAnarchy ? "" : "gov-icon--democracy"}
+        />
+        <strong style={{ fontSize: "1.2rem", color: "#e0e0e0" }}>
+          {isAnarchy ? "Anarchy" : "Democracy"}
+        </strong>
+      </div>
     </div>
   );
 }
@@ -45,17 +62,25 @@ function ChatInputForm({ onSubmit }) {
         input.value = "";
       }}
     >
-      <input name="command" placeholder="Type in Inputs" />
+      <input
+        name="command"
+        placeholder="Type in Inputs"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+      />
     </form>
   );
 }
 
-export function AnarchyPanel({ queue, onSubmit }) {
+export function AnarchyPanel({ queue, countdownLine, flashLine, onSubmit, chatTheme = "dark", onThemeToggle }) {
+  const items = countdownLine ? [countdownLine] : (flashLine ? [flashLine] : queue);
   return (
-    <div className="chat-panel">
-      <GovHeader government="anarchy" />
+    <div className={`chat-panel${chatTheme === "light" ? " chat-panel--light" : ""}`}>
+      <GovHeader government="anarchy" chatTheme={chatTheme} onThemeToggle={onThemeToggle} />
       <div className="chat-panel__body">
-        <ChatQueue items={queue} />
+        <ChatQueue items={items} />
       </div>
       <ChatInputForm onSubmit={onSubmit} />
     </div>
@@ -64,6 +89,8 @@ export function AnarchyPanel({ queue, onSubmit }) {
 
 export function DemocracyPanel({
   queue,
+  countdownLine,
+  flashLine,
   voteSlots,
   countdownLabel,
   latestWinner,
@@ -75,10 +102,12 @@ export function DemocracyPanel({
   onSecondsChange,
   onUpdateTime,
   onToggleTimer,
+  chatTheme = "dark",
+  onThemeToggle,
 }) {
   return (
-    <div className="chat-panel">
-      <GovHeader government="democracy" />
+    <div className={`chat-panel${chatTheme === "light" ? " chat-panel--light" : ""}`}>
+      <GovHeader government="democracy" chatTheme={chatTheme} onThemeToggle={onThemeToggle} />
       <div className="chat-panel__controls col">
         <div className="row pixel" style={{ justifyContent: "space-between" }}>
           <label>
@@ -116,7 +145,7 @@ export function DemocracyPanel({
         </div>
       </div>
       <div className="chat-panel__body">
-        <ChatQueue items={queue} />
+        <ChatQueue items={countdownLine ? [countdownLine] : (flashLine ? [flashLine] : queue)} />
       </div>
       <ChatInputForm onSubmit={onSubmit} />
     </div>

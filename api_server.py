@@ -41,6 +41,15 @@ class ControllerButtonBody(BaseModel):
     button: str
 
 
+class KeyBindingBody(BaseModel):
+    input_name: str
+    key: str
+
+
+class ToggleDisabledBody(BaseModel):
+    input_name: str
+
+
 class SettingsBody(BaseModel):
     meta_mode: Optional[str] = None
     government: Optional[str] = None
@@ -53,6 +62,7 @@ class SettingsBody(BaseModel):
     democracy_minutes: Optional[int] = None
     democracy_seconds: Optional[int] = None
     setup_link_mode: Optional[str] = None
+    setup_emulator: Optional[str] = None
 
 
 class MainSettingsBody(BaseModel):
@@ -89,18 +99,18 @@ main_state = MainWindowState()
 loop: Optional[asyncio.AbstractEventLoop] = None
 
 
-def _schedule_broadcast():
+def _schedule_broadcast(setup_state: Optional[SetupTestState] = None):
     if loop is None:
         return
     payload = {
         "type": "state",
-        "setup": state_to_dict(service.get_state()),
+        "setup": state_to_dict(setup_state if setup_state is not None else service.get_state()),
         "main": asdict(main_state),
     }
     asyncio.run_coroutine_threadsafe(manager.broadcast(payload), loop)
 
 
-service = SetupTestService(on_change=lambda _state: _schedule_broadcast())
+service = SetupTestService(on_change=_schedule_broadcast)
 
 app = FastAPI(title="ChatPlays API")
 app.add_middleware(
@@ -140,6 +150,18 @@ def submit_input(body: SubmitInputBody):
 @app.post("/api/setup/controller-button")
 def controller_button(body: ControllerButtonBody):
     service.press_controller_button(body.button)
+    return {"ok": True}
+
+
+@app.post("/api/setup/key-binding")
+def update_key_binding(body: KeyBindingBody):
+    service.update_key_binding(body.input_name, body.key)
+    return {"ok": True}
+
+
+@app.post("/api/setup/toggle-disabled-input")
+def toggle_disabled_input(body: ToggleDisabledBody):
+    service.toggle_disabled_input(body.input_name)
     return {"ok": True}
 
 
@@ -204,6 +226,8 @@ def update_setup_settings(body: SettingsBody):
         service.update_democracy_time(minutes, seconds)
     if body.setup_link_mode is not None:
         service.set_setup_link_mode(body.setup_link_mode)
+    if body.setup_emulator is not None:
+        service.set_setup_emulator(body.setup_emulator)
     return {"ok": True}
 
 

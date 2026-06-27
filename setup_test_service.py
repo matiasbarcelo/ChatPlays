@@ -1,5 +1,6 @@
 """Headless setup/test logic (no PyQt). Used by the Electron UI via api_server."""
 
+import copy
 import logging
 import platform
 import threading
@@ -17,17 +18,19 @@ IS_MAC = platform.system() == "Darwin"
 from emulator_support import (
     EmulatorDetection,
     build_auto_link_summary,
-    focus_emulator,
-    read_vba_gba_keyboard_map,
+    apply_vba_joypad_link,
     scan_for_emulator,
+    sync_vba_gba_keyboard,
 )
 
 if IS_MAC:
     from pynput import keyboard as pynput_keyboard
 
-    from keyboard_backend import ANALOG_INPUTS, pynput_key_to_string, write_keyboard_mapping, write_keyboard_mappings
+    from keyboard_backend import ANALOG_INPUTS, load_keyboard_maps, pynput_key_to_string, set_target_process, write_keyboard_mapping, write_keyboard_mappings
 else:
-    from keyboard_backend import write_keyboard_mappings
+    from keyboard_backend import load_keyboard_maps, set_target_process, write_keyboard_mappings
+
+from setup_countdown import SetupCountdownRunner
 
 CONTROLLER_CLASS_NAMES = {
     "GBA": "GBAController",
@@ -65,16 +68,21 @@ class SetupTestState:
         default_factory=lambda: [VoteSlot() for _ in range(4)]
     )
     button_map: dict = field(default_factory=dict)
+    keyboard_map: dict = field(default_factory=dict)
+    disabled_inputs: List[str] = field(default_factory=list)
     manual_setup_active: bool = False
     manual_setup_prompt: str = ""
     manual_setup_current_input: str = ""
-    setup_link_mode: str = "manual"
+    setup_link_mode: str = "automatic"
+    setup_emulator: str = "visualboyadvance"
     emulator_detected: bool = False
     emulator_name: str = ""
     emulator_window: str = ""
     emulator_message: str = ""
     emulator_config_path: str = ""
     auto_link_status: str = ""
+    setup_countdown_line: str = ""
+    setup_countdown_active: bool = False
 
 
 class SetupTestService:
@@ -83,9 +91,7 @@ class SetupTestService:
         self.on_change = on_change
         self.state = SetupTestState()
         self._lock = threading.Lock()
-        self._setup_timer: Optional[threading.Timer] = None
         self._democracy_timer: Optional[threading.Timer] = None
-        self._setup_timer_context = {}
         self._manual_setup_inputs: List[str] = []
         self._manual_setup_index = 0
         self._keyboard_listener = None
@@ -94,6 +100,7 @@ class SetupTestService:
         self._sync_from_program()
         self.state.controller = self._controller_label()
         self._refresh_button_map()
+        self._countdown_runner = SetupCountdownRunner(self)
 
         self._anarchy_thread = threading.Thread(
             target=self._run_anarchy_thread, daemon=True
@@ -106,11 +113,13 @@ class SetupTestService:
 
     def get_state(self) -> SetupTestState:
         with self._lock:
-            return self.state
+            return copy.deepcopy(self.state)
 
     def _notify(self):
         if self.on_change:
-            self.on_change(self.get_state())
+            with self._lock:
+                snapshot = copy.deepcopy(self.state)
+            self.on_change(snapshot)
 
     def _sync_from_program(self):
         st = self.program.setupTest
@@ -128,6 +137,12 @@ class SetupTestService:
 
     def _refresh_button_map(self):
         self.state.button_map = self.program.setupTest.controller.getButtonsForUiDict()
+        controller_name = self._controller_class_name()
+        try:
+            maps = load_keyboard_maps()
+            self.state.keyboard_map = maps.get(controller_name, {})
+        except Exception:
+            self.state.keyboard_map = {}
 
     def _controller_label(self) -> str:
         name = type(self.program.setupTest.controller).__name__
@@ -158,6 +173,60 @@ class SetupTestService:
     def _clear_chat_queue(self, gov: Optional[str] = None):
         self._chat_queue(gov).clear()
 
+    def countdown_input_names(self) -> List[str]:
+        inputs = list(self.program.setupTest.controller.getInputs().keys())
+        if IS_MAC:
+            return [name for name in inputs if name not in ANALOG_INPUTS]
+        return inputs
+
+    def countdown_seconds_value(self) -> int:
+        with self._lock:
+            return self.state.countdown_seconds
+
+    def countdown_session_begin(self, *, manual: bool):
+        with self._lock:
+            if not manual:
+                self._pause_gov_threads_for_setup()
+                self._clear_chat_queue()
+            self.state.setup_countdown_active = True
+            self.state.setup_countdown_line = ""
+            if not manual:
+                self.program.setupTest.resetIndexCount()
+            self.program.setupTest.setCountdown(self.state.countdown_seconds)
+        self._notify()
+
+    def countdown_session_end(self, *, reset_index: bool):
+        with self._lock:
+            self.state.setup_countdown_active = False
+            self.state.setup_countdown_line = ""
+            self.program.setupTest.setCountdown(self.state.countdown_seconds)
+            if reset_index:
+                self.program.setupTest.resetIndexCount()
+            if not self.state.manual_setup_active:
+                self._resume_gov_threads()
+        self._notify()
+
+    def countdown_show_tick(self, button: str, remaining: int):
+        line = button if remaining == 0 else f'"{button}" {remaining}'
+        with self._lock:
+            self.state.setup_countdown_line = line
+        self._notify()
+
+    def countdown_fire_input(self, button: str):
+        self.program.setupTest.metaCommand(Input(button, self.program.setupTest))
+
+    def countdown_clear_display(self):
+        with self._lock:
+            self.state.setup_countdown_line = ""
+        self._notify()
+
+    def countdown_manual_step_complete(self):
+        with self._lock:
+            if not self.state.manual_setup_active:
+                return
+            self._manual_setup_index += 1
+        self._begin_manual_setup_step()
+
     def _execute_test_command(self, text: str):
         try:
             input_obj = Input(text, self.program.setupTest)
@@ -170,7 +239,7 @@ class SetupTestService:
         if normalized not in ("setup", "test"):
             return
         if normalized == "test":
-            self._cancel_setup_timer()
+            self._countdown_runner.cancel()
             if self.state.manual_setup_active:
                 self.cancel_manual_setup()
             else:
@@ -192,7 +261,14 @@ class SetupTestService:
         with self._lock:
             self.program.setupTest.setMetaGov(normalized)
             self.state.government = normalized
-            if normalized == "anarchy":
+            if self.state.setup_countdown_active or self.state.manual_setup_active:
+                if normalized == "anarchy":
+                    self.program.setupTest.setAnarchyThreadStatus(False)
+                    self.program.setupTest.democracyThreadStatus = False
+                else:
+                    self.program.setupTest.anarchyThreadStatus = False
+                    self.program.setupTest.setDemocracyThreadStatus(False)
+            elif normalized == "anarchy":
                 self.program.setupTest.democracyThreadStatus = False
                 self.program.setupTest.anarchyThreadStatus = True
             else:
@@ -221,8 +297,22 @@ class SetupTestService:
             self._notify()
 
     def scan_emulator(self):
-        detection = scan_for_emulator(self.state.controller)
+        detection = scan_for_emulator(
+            self.state.controller,
+            emulator_id=self.state.setup_emulator,
+        )
         self._apply_emulator_detection(detection)
+
+    def set_setup_emulator(self, emulator_id: str):
+        normalized = emulator_id.strip().lower()
+        if not normalized:
+            return
+        with self._lock:
+            self.state.setup_emulator = normalized
+        if self.state.setup_link_mode == "automatic":
+            self.scan_emulator()
+        else:
+            self._notify()
 
     def _apply_emulator_detection(self, detection: EmulatorDetection):
         self._emulator_detection = detection
@@ -234,6 +324,7 @@ class SetupTestService:
             self.state.emulator_message = detection.message
             if not detection.found:
                 self.state.auto_link_status = ""
+        set_target_process(detection.app_name if detection.found else "")
         self._notify()
 
     def auto_link_emulator(self):
@@ -247,36 +338,69 @@ class SetupTestService:
             self._notify()
             return
 
-        detection = scan_for_emulator(self.state.controller)
-        self._apply_emulator_detection(detection)
-
-        config_path = detection.config_path or None
-        mapping, source = read_vba_gba_keyboard_map(config_path)
-        controller_name = self._controller_class_name()
-
-        write_keyboard_mappings(controller_name, mapping)
-        self.program.setupTest.controller.reload_keyboard_mappings()
-
-        if detection.found:
-            focus_emulator(detection)
-
-        summary = build_auto_link_summary(mapping, source)
-        gov = self.program.setupTest.getMetaGov()
         with self._lock:
-            self.state.auto_link_status = summary
-            self._append_chat_line("Automatic link complete.", gov)
-            self._append_chat_line(summary, gov)
-            if detection.found:
-                self._append_chat_line(
-                    f"Focused emulator window: {detection.window_title}",
-                    gov,
+            self._pause_gov_threads_for_setup()
+
+        try:
+            detection = scan_for_emulator(
+                self.state.controller,
+                emulator_id=self.state.setup_emulator,
+            )
+            self._apply_emulator_detection(detection)
+
+            config_path = detection.config_path or None
+            mapping, source, wrote_config = sync_vba_gba_keyboard(config_path)
+            controller_name = self._controller_class_name()
+
+            write_keyboard_mappings(controller_name, mapping)
+            self.program.setupTest.controller.reload_keyboard_mappings()
+
+            joypad_opened, was_already_running, restarted, game_restored = apply_vba_joypad_link(
+                mapping, detection, config_path, reload_config=wrote_config
+            )
+
+            summary = build_auto_link_summary(mapping, source, wrote_config=wrote_config)
+            if joypad_opened and restarted and game_restored:
+                status = (
+                    f"{summary}\nRestarted VisualBoy Advance-M, restored your game from "
+                    "save slot 8, and opened joypad configuration."
+                )
+            elif joypad_opened and restarted:
+                status = (
+                    f"{summary}\nRestarted VisualBoy Advance-M to reload cleared joypad "
+                    "bindings and opened joypad configuration."
+                )
+            elif joypad_opened and was_already_running:
+                status = (
+                    f"{summary}\nUpdated vbam.ini, focused VisualBoy Advance-M, "
+                    "and opened joypad configuration."
+                )
+            elif joypad_opened:
+                status = (
+                    f"{summary}\nLaunched VisualBoy Advance-M and opened joypad configuration."
+                )
+            elif was_already_running:
+                status = (
+                    f"{summary}\nUpdated vbam.ini but could not open joypad configuration. "
+                    "Grant Accessibility to Cursor/Python."
                 )
             else:
-                self._append_chat_line(
-                    "Emulator window not focused — open VisualBoy Advance and test inputs.",
-                    gov,
+                status = (
+                    f"{summary}\nCould not open VBA-M joypad configuration. "
+                    "Grant Accessibility to Cursor/Python and ensure VBA-M is installed."
                 )
-        self._notify()
+            with self._lock:
+                self.state.auto_link_status = status
+                self.state.setup_log.append("Automatic link complete.")
+                self.state.setup_log.append(summary)
+        except Exception as error:
+            logger.exception("Automatic link failed: %s", error)
+            with self._lock:
+                self.state.auto_link_status = f"Automatic link failed: {error}"
+        finally:
+            with self._lock:
+                self._resume_gov_threads()
+            self._notify()
 
     def set_controller(self, controller: str):
         self.cancel_manual_setup()
@@ -347,22 +471,19 @@ class SetupTestService:
             self._execute_test_command(text)
             return
 
-        with self._lock:
-            self._append_chat_line(text, gov)
-        self._notify()
-        self._start_setup_countdown(single_input=True, button=text)
+        self._countdown_runner.start_single(text)
 
     def press_controller_button(self, button_name: str):
         if self.state.manual_setup_active:
             return
         mode = self.program.setupTest.getMetaMode()
         if mode == "setup":
-            self._start_setup_countdown(single_input=True, button=button_name)
+            self._countdown_runner.start_single(button_name)
         else:
             self.submit_input(button_name)
 
     def run_general_setup(self):
-        self._start_setup_countdown(single_input=False)
+        self._countdown_runner.start_general()
 
     def start_manual_setup(self):
         self.cancel_manual_setup()
@@ -384,7 +505,7 @@ class SetupTestService:
 
     def cancel_manual_setup(self):
         self._stop_keyboard_listener()
-        self._cancel_setup_timer()
+        self._countdown_runner.cancel()
         with self._lock:
             self.state.manual_setup_active = False
             self.state.manual_setup_prompt = ""
@@ -392,7 +513,9 @@ class SetupTestService:
             self._manual_setup_inputs = []
             self._manual_setup_index = 0
             self._manual_setup_waiting_for_key = False
-            self._setup_timer_context = {}
+            self.state.setup_countdown_active = False
+            self.state.setup_countdown_line = ""
+            self._clear_chat_queue()
         self._resume_gov_threads()
         self._notify()
 
@@ -433,6 +556,8 @@ class SetupTestService:
                 self.state.manual_setup_active = False
                 self.state.manual_setup_prompt = ""
                 self.state.manual_setup_current_input = ""
+                self.state.setup_countdown_active = False
+                self.state.setup_countdown_line = ""
                 self._manual_setup_inputs = []
                 self._manual_setup_index = 0
                 self._resume_gov_threads()
@@ -448,18 +573,9 @@ class SetupTestService:
                 f"Step {step}/{total}: focus your emulator and bind "
                 f'"{input_name}" when it presses.'
             )
-            gov = self.program.setupTest.getMetaGov()
-            self._append_chat_line(
-                f'Pressing "{input_name}" in {self.state.countdown_seconds}s ({step}/{total})',
-                gov,
-            )
 
         self._notify()
-        self._start_setup_countdown(
-            single_input=True,
-            button=input_name,
-            manual_setup=True,
-        )
+        self._countdown_runner.start_manual_step(input_name)
 
     def _start_keyboard_listener(self):
         self._stop_keyboard_listener()
@@ -486,6 +602,27 @@ class SetupTestService:
         if listener is not None:
             listener.stop()
 
+    def toggle_disabled_input(self, input_name: str):
+        self.program.setupTest.controller.disableInput(input_name)
+        with self._lock:
+            if input_name in self.state.disabled_inputs:
+                self.state.disabled_inputs.remove(input_name)
+            else:
+                self.state.disabled_inputs.append(input_name)
+        self._notify()
+
+    def update_key_binding(self, input_name: str, key_string: str):
+        """Directly update a single key binding for the current controller."""
+        controller_name = self._controller_class_name()
+        try:
+            write_keyboard_mapping(controller_name, input_name, key_string)
+            self.program.setupTest.controller.reload_keyboard_mappings()
+        except Exception:
+            pass
+        with self._lock:
+            self.state.keyboard_map[input_name] = key_string
+        self._notify()
+
     def _handle_manual_key_captured(self, key_string: str):
         with self._lock:
             if not self.state.manual_setup_active:
@@ -501,119 +638,7 @@ class SetupTestService:
             self.program.setupTest.setCountdown(self.state.countdown_seconds)
 
         self._notify()
-        self._start_setup_countdown(
-            single_input=True,
-            button=input_name,
-            manual_setup=True,
-        )
-
-    def _advance_manual_setup(self):
-        with self._lock:
-            if not self.state.manual_setup_active:
-                return
-            self._manual_setup_index += 1
-        self._begin_manual_setup_step()
-
-    def _start_setup_countdown(
-        self,
-        single_input: bool,
-        button: Optional[str] = None,
-        manual_setup: bool = False,
-    ):
-        gov = self.program.setupTest.getMetaGov()
-        with self._lock:
-            if not manual_setup:
-                self._pause_gov_threads_for_setup()
-                self._clear_chat_queue()
-
-            self._setup_timer_context = {
-                "single_input": single_input,
-                "button": button,
-                "gov": gov,
-                "manual_setup": manual_setup,
-            }
-        self._cancel_setup_timer()
-        self._schedule_setup_tick()
-
-    def _schedule_setup_tick(self):
-        self._setup_timer = threading.Timer(1.0, self._setup_timer_step)
-        self._setup_timer.daemon = True
-        self._setup_timer.start()
-
-    def _cancel_setup_timer(self):
-        if self._setup_timer:
-            self._setup_timer.cancel()
-            self._setup_timer = None
-
-    def _setup_timer_step(self):
-        reschedule = False
-        advance_manual = False
-        with self._lock:
-            count = self.program.setupTest.getCountdown()
-            ctx = dict(self._setup_timer_context)
-            if count >= 0:
-                line = str(count)
-                self._append_chat_line(line, ctx.get("gov"))
-                self.program.setupTest.reduceSetupCount()
-                reschedule = True
-            elif ctx.get("single_input"):
-                button = ctx.get("button")
-                if button:
-                    queue = self._chat_queue(ctx.get("gov"))
-                    if not queue or queue[-1] != button:
-                        self._append_chat_line(button, ctx.get("gov"))
-                    input_obj = Input(button, self.program.setupTest)
-                    self.program.setupTest.metaCommand(input_obj)
-                self.program.setupTest.setCountdown(self.state.countdown_seconds)
-                if ctx.get("manual_setup"):
-                    self._clear_chat_queue(ctx.get("gov"))
-                    self._setup_timer_context = {}
-                    advance_manual = True
-                else:
-                    self._clear_chat_queue(ctx.get("gov"))
-                    gov = ctx.get("gov")
-                    if gov == "anarchy":
-                        self.program.setupTest.setAnarchyThreadStatus(True)
-                    else:
-                        self.program.setupTest.setDemocracyThreadStatus(True)
-                    self._setup_timer_context = {}
-            else:
-                if not self._run_full_setup_sequence(ctx.get("gov")):
-                    self._setup_timer_context = {}
-
-        if reschedule:
-            self._notify()
-            self._schedule_setup_tick()
-            return
-        if advance_manual:
-            self._notify()
-            threading.Timer(0.4, self._advance_manual_setup).start()
-            return
-        self._notify()
-
-    def _run_full_setup_sequence(self, gov: str) -> bool:
-        index = self.program.setupTest.getCountdownIndex()
-        inputs = list(self.program.setupTest.controller.getInputs().keys())
-        if index < len(inputs):
-            current = inputs[index]
-            self._append_chat_line(current, gov)
-            input_obj = Input(current, self.program.setupTest)
-            self.program.setupTest.metaCommand(input_obj)
-            if index < len(inputs) - 1:
-                self.program.setupTest.setCountdown(self.state.countdown_seconds)
-                self.program.setupTest.increaseIndexCount()
-                self._setup_timer_context = {"single_input": False, "gov": gov}
-                self._schedule_setup_tick()
-                return True
-
-            self.program.setupTest.resetIndexCount()
-            self.program.setupTest.setCountdown(self.state.countdown_seconds)
-            self._clear_chat_queue(gov)
-            if gov == "anarchy":
-                self.program.setupTest.setAnarchyThreadStatus(True)
-            else:
-                self.program.setupTest.setDemocracyThreadStatus(True)
-        return False
+        self._countdown_runner.start_manual_step(input_name)
 
     def update_democracy_time(self, minutes: int, seconds: int):
         total = (minutes * 60) + seconds
@@ -704,11 +729,22 @@ class SetupTestService:
                 if self.program.setupTest.getMetaGov() != "anarchy":
                     continue
                 with self._lock:
+                    if self.state.manual_setup_active:
+                        continue
+                    if self.state.setup_countdown_active:
+                        continue
                     if not self.state.anarchy_queue:
                         continue
                     text = self.state.anarchy_queue[0]
                     self.program.setupTest.setAnarchyThreadStatus(False)
-                input_obj = Input(text, self.program.setupTest)
+                try:
+                    input_obj = Input(text, self.program.setupTest)
+                except ValueError:
+                    with self._lock:
+                        if self.state.anarchy_queue and self.state.anarchy_queue[0] == text:
+                            self.state.anarchy_queue.pop(0)
+                        self.program.setupTest.setAnarchyThreadStatus(True)
+                    continue
                 self.program.setupTest.metaCommand(input_obj)
                 with self._lock:
                     if self.state.anarchy_queue and self.state.anarchy_queue[0] == text:
@@ -718,6 +754,8 @@ class SetupTestService:
             except Exception as error:
                 logger.exception("Anarchy thread error: %s", error)
                 with self._lock:
+                    if self.state.anarchy_queue:
+                        self.state.anarchy_queue.pop(0)
                     self.program.setupTest.setAnarchyThreadStatus(True)
 
     def _run_democracy_thread(self):
@@ -747,5 +785,5 @@ class SetupTestService:
 
     def shutdown(self):
         self.cancel_manual_setup()
-        self._cancel_setup_timer()
+        self._countdown_runner.cancel()
         self._cancel_democracy_timer()

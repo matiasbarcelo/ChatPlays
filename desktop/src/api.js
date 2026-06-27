@@ -45,6 +45,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  updateKeyBinding: (input_name, key) =>
+    apiFetch("/api/setup/key-binding", {
+      method: "POST",
+      body: JSON.stringify({ input_name, key }),
+    }),
+  toggleDisabledInput: (input_name) =>
+    apiFetch("/api/setup/toggle-disabled-input", {
+      method: "POST",
+      body: JSON.stringify({ input_name }),
+    }),
   togglePower: () => apiFetch("/api/main/toggle-power", { method: "POST" }),
   updateMainSettings: (payload) =>
     apiFetch("/api/main/settings", {

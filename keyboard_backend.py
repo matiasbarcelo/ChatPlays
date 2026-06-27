@@ -11,6 +11,31 @@ from pynput.keyboard import Controller, Key, KeyCode
 
 IS_MAC = platform.system() == "Darwin"
 
+# When set, keystrokes are targeted at this process by name instead of the
+# frontmost app, so ChatPlays doesn't need focus and its own window is ignored.
+_target_process: str = ""
+
+_VBA_PROCESS_NAMES = ("visualboyadvance-m", "VisualBoyAdvance-M", "VisualBoyAdvance")
+
+
+def set_target_process(name: str) -> None:
+    global _target_process
+    _target_process = name or ""
+
+
+def _auto_detect_target() -> None:
+    """Try to find a running VBA-M process and set it as the target."""
+    global _target_process
+    try:
+        result = subprocess.run(
+            ["pgrep", "-if", r"visualboyadvance|vbam"],
+            capture_output=True, text=True, check=False, timeout=3,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            set_target_process("visualboyadvance-m")
+    except Exception:
+        pass
+
 # Defaults match common mGBA / OpenEmu-style bindings on macOS.
 DEFAULT_KEYBOARD_MAPS = {
     "GBAController": {
@@ -103,16 +128,30 @@ def _resolve_key(key_name):
 
 
 def _mac_press_key(key, duration: float) -> bool:
-    """Hold a key in the frontmost app via System Events (works reliably in TextEdit)."""
+    """Send a key to the target process via System Events.
+
+    Returns False (without sending) if no target process is configured, so
+    keystrokes are never accidentally delivered to the ChatPlays window.
+    """
+    process = _target_process
+    if not process:
+        return False
+
+    escaped_proc = process.replace("\\", "\\\\").replace('"', '\\"')
+
     if isinstance(key, Key):
         code = MAC_KEY_CODES.get(key)
         if code is None:
             return False
+        repeats = max(1, round(duration / 0.08))
         script = f"""
 tell application "System Events"
-    key code {code} down
-    delay {duration}
-    key code {code} up
+    tell process "{escaped_proc}"
+        repeat {repeats} times
+            key code {code}
+            delay 0.08
+        end repeat
+    end tell
 end tell
 """
     else:
@@ -124,9 +163,11 @@ end tell
         escaped = char.replace("\\", "\\\\").replace('"', '\\"')
         script = f"""
 tell application "System Events"
-    key down "{escaped}"
-    delay {duration}
-    key up "{escaped}"
+    tell process "{escaped_proc}"
+        key down "{escaped}"
+        delay {duration}
+        key up "{escaped}"
+    end tell
 end tell
 """
     try:
@@ -250,9 +291,21 @@ class KeyboardBackend:
             getattr(mapped, "char", mapped),
             duration,
         )
+        if IS_MAC:
+            # On macOS always use AppleScript targeted at the emulator process so
+            # keystrokes never land in the ChatPlays window regardless of focus.
+            # If _target_process isn't set yet, try to auto-detect VBA-M.
+            if not _target_process:
+                _auto_detect_target()
+            if not _mac_press_key(mapped, duration):
+                logging.warning(
+                    "Keyboard press failed for %r — is the emulator running and does "
+                    "Python have Accessibility permission?",
+                    input_name,
+                )
+            return
+
         try:
-            if IS_MAC and _mac_press_key(mapped, duration):
-                return
             self._keyboard.press(mapped)
             time.sleep(duration)
             self._keyboard.release(mapped)

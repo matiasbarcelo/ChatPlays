@@ -33,7 +33,15 @@ function imageRectStyle(imageRect, canvas) {
   };
 }
 
-export function ControllerPanel({ controller, buttonMap = {}, highlightInput = "", onButtonPress }) {
+const ANALOG_INPUTS = new Set([
+  "lstick", "rstick",
+  "left_joystick_float", "right_joystick_float",
+  "left_trigger_float", "right_trigger_float",
+]);
+
+const IS_MAC = /mac/i.test(navigator.platform);
+
+export function ControllerPanel({ controller, buttonMap = {}, highlightInput = "", disabledInputs = [], onButtonPress }) {
   const layout = CONTROLLER_LAYOUTS[controller] || CONTROLLER_LAYOUTS.GBA;
   const image = IMAGES[controller] || gbaImage;
   const { canvas, imageRect } = layout;
@@ -61,22 +69,28 @@ export function ControllerPanel({ controller, buttonMap = {}, highlightInput = "
         draggable={false}
         style={imageRectStyle(imageRect, canvas)}
       />
-      {buttons.map(({ uiName, inputName, label, position }) => (
-        <button
+      {buttons.map(({ uiName, inputName, label, position }) => {
+        const isDisabled = disabledInputs.includes(inputName);
+        const isUnavailable = IS_MAC && ANALOG_INPUTS.has(inputName);
+        return (<button
           key={uiName}
           type="button"
-          className={`controller-hit ${controller === "GBA" ? "controller-hit--round" : ""}${
-            highlightInput && inputName === highlightInput ? " controller-hit--active" : ""
-          }`}
+          className={[
+            "controller-hit",
+            controller === "GBA" ? "controller-hit--round" : "",
+            highlightInput && inputName === highlightInput ? "controller-hit--active" : "",
+            isDisabled ? "controller-hit--disabled" : "",
+            isUnavailable ? "controller-hit--unavailable" : "",
+          ].filter(Boolean).join(" ")}
           style={position}
-          title={inputName}
+          title={isUnavailable ? "Analog input — not supported on Mac" : inputName}
           aria-label={label}
           onMouseDown={(event) => event.preventDefault()}
-          onClick={() => onButtonPress(inputName)}
+          onClick={() => !isDisabled && !isUnavailable && onButtonPress(inputName)}
         >
           <span className="controller-hit__label">{label}</span>
-        </button>
-      ))}
+        </button>);
+      })}
     </div>
   );
 }
