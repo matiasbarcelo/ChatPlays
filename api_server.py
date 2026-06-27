@@ -28,6 +28,9 @@ def state_to_dict(state: SetupTestState) -> dict:
 @dataclass
 class MainWindowState:
     twitch_username: str = ""
+    oauth_key: str = ""
+    streaming_platform: str = "twitch"
+    emulator: str = "visualboyadvance"
     government: str = "anarchy"
     program_status: bool = False
     democracy_time_limit: int = 10
@@ -67,6 +70,9 @@ class SettingsBody(BaseModel):
 
 class MainSettingsBody(BaseModel):
     twitch_username: Optional[str] = None
+    oauth_key: Optional[str] = None
+    streaming_platform: Optional[str] = None
+    emulator: Optional[str] = None
     government: Optional[str] = None
     democracy_time_limit: Optional[int] = None
 
@@ -250,6 +256,12 @@ def update_main_settings(body: MainSettingsBody):
     if body.twitch_username is not None:
         main_state.twitch_username = body.twitch_username
         service.program.setUser(body.twitch_username)
+    if body.oauth_key is not None:
+        main_state.oauth_key = body.oauth_key
+    if body.streaming_platform is not None:
+        main_state.streaming_platform = body.streaming_platform
+    if body.emulator is not None:
+        main_state.emulator = body.emulator
     if body.government is not None:
         main_state.government = body.government.lower()
         service.program.setGov(main_state.government)

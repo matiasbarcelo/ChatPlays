@@ -22,6 +22,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, "index.html"),
         setup: path.resolve(__dirname, "setup.html"),
+        monitor: path.resolve(__dirname, "monitor.html"),
       },
     },
   },

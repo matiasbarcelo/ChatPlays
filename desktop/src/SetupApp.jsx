@@ -20,7 +20,7 @@ function keyEventToString(event) {
   return key.toLowerCase();
 }
 
-function KeyBindTable({ keyMap, disabledInputs = [] }) {
+export function KeyBindTable({ keyMap, disabledInputs = [] }) {
   const [capturing, setCapturing] = useState(null);
   const rowRef = useRef(null);
 
@@ -102,10 +102,13 @@ export function SetupApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [linkFlash, setLinkFlash] = useState("");
   const [chatTheme, setChatTheme] = useState("dark");
-  const [globalTheme, setGlobalTheme] = useState("light");
+  const [globalTheme, setGlobalTheme] = useState(
+    () => localStorage.getItem("chatplays-theme") || "light"
+  );
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", globalTheme);
+    localStorage.setItem("chatplays-theme", globalTheme);
   }, [globalTheme]);
 
   const minutes = demMinutes ?? setup?.democracy_minutes ?? 0;
@@ -261,20 +264,24 @@ export function SetupApp() {
                 <span className="pixel" style={{ textTransform: "capitalize" }}>
                   {name}
                 </span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={value}
-                  onChange={(event) => {
-                    const numeric = Number(event.target.value) || 0;
-                    pushSettings({
-                      tap_time: name === "tap" ? numeric : setup.tap_time,
-                      press_time: name === "press" ? numeric : setup.press_time,
-                      hold_time: name === "hold" ? numeric : setup.hold_time,
-                      default_time_length: setup.default_time_length,
-                    });
-                  }}
-                />
+                <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={value}
+                    style={{ paddingRight: 20 }}
+                    onChange={(event) => {
+                      const numeric = Number(event.target.value) || 0;
+                      pushSettings({
+                        tap_time: name === "tap" ? numeric : setup.tap_time,
+                        press_time: name === "press" ? numeric : setup.press_time,
+                        hold_time: name === "hold" ? numeric : setup.hold_time,
+                        default_time_length: setup.default_time_length,
+                      });
+                    }}
+                  />
+                  <span style={{ position: "absolute", right: 7, fontSize: "0.8rem", color: "var(--app-muted)", pointerEvents: "none", userSelect: "none" }}>s</span>
+                </div>
               </label>
             ))}
           </div>

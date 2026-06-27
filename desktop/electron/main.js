@@ -9,6 +9,7 @@ const isDev = !app.isPackaged;
 let pythonProcess = null;
 let mainWindow = null;
 let setupWindow = null;
+let monitorWindow = null;
 
 function projectRoot() {
   if (isDev) {
@@ -55,10 +56,10 @@ function loadWindow(win, page) {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 380,
-    height: 560,
-    minWidth: 340,
-    minHeight: 520,
+    width: 400,
+    height: 680,
+    minWidth: 360,
+    minHeight: 620,
     title: "ChatPlays",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -95,9 +96,36 @@ function createSetupWindow() {
   });
 }
 
+function createMonitorWindow() {
+  if (monitorWindow) {
+    monitorWindow.focus();
+    return;
+  }
+  monitorWindow = new BrowserWindow({
+    width: 520,
+    height: 680,
+    minWidth: 420,
+    minHeight: 500,
+    title: "Chat Monitor",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  loadWindow(monitorWindow, "monitor.html");
+  monitorWindow.on("closed", () => {
+    monitorWindow = null;
+  });
+}
+
 app.whenReady().then(() => {
   ipcMain.handle("open-setup-window", () => {
     createSetupWindow();
+  });
+
+  ipcMain.handle("open-monitor-window", () => {
+    createMonitorWindow();
   });
 
   ipcMain.handle("close-setup-window", () => {
