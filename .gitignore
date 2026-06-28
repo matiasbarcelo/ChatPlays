@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+virt/
+
+# Node / Electron
+desktop/node_modules/
+
+# Emulator binaries (install locally; do not commit)
+visualboyadvance-m.exe
+VisualBoyAdvance-M.exe
+vbam.exe
+
+# ROM files
+roms/
