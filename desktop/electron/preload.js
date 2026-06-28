@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld("chatplays", {
   closeSetupWindow: () => ipcRenderer.invoke("close-setup-window"),
   openMonitorWindow: () => ipcRenderer.invoke("open-monitor-window"),
   getApiBase: () => ipcRenderer.invoke("get-api-base"),
+  getFileIcon: (filePath) => ipcRenderer.invoke("get-file-icon", filePath),
   isElectron: true,
 });

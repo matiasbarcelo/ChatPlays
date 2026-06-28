@@ -77,7 +77,9 @@ export function MonitorApp() {
           <ControllerPanel
             controller={setup.controller}
             buttonMap={setup.button_map}
-            highlightInput={setup.manual_setup_current_input}
+            highlightInput={
+              setup.manual_setup_active ? setup.manual_setup_current_input : ""
+            }
             disabledInputs={setup.disabled_inputs || []}
             onButtonPress={() => {}}
           />

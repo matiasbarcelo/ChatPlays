@@ -2,20 +2,12 @@ import { useState, useEffect } from "react";
 import logo from "@assets/logo.png";
 import anarchyLogo from "@assets/anarchy.png";
 import democracyLogo from "@assets/democracy.png";
-import controllerImg from "@assets/controller.png";
 import { api } from "./api";
 import { useChatPlaysState } from "./hooks/useChatPlaysState";
 import { openSetupWindow } from "./openSetupWindow";
 import { KeyBindTable } from "./SetupApp";
-
-function InfoIcon({ tip, onClick }) {
-  return (
-    <span className={`main-info-icon${onClick ? " main-info-icon--link" : ""}`} onClick={onClick}>
-      <span className="icon" style={{ fontSize: 18 }}>info</span>
-      <span className="main-tooltip">{tip}</span>
-    </span>
-  );
-}
+import { InfoIcon } from "./components/InfoIcon";
+import { EmulatorDetectField } from "./components/EmulatorDetectField";
 
 function TwitchIcon({ size = 18 }) {
   return (
@@ -31,6 +23,7 @@ export function MainApp() {
   const { ready, main, setup } = useChatPlaysState("main");
   const [copied, setCopied] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [emulatorScanning, setEmulatorScanning] = useState(false);
   const [globalTheme, setGlobalTheme] = useState(
     () => localStorage.getItem("chatplays-theme") || "light"
   );
@@ -38,6 +31,19 @@ export function MainApp() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", globalTheme);
   }, [globalTheme]);
+
+  useEffect(() => {
+    if (!ready) return;
+    api.scanMainEmulator().catch(() => {});
+  }, [ready]);
+
+  const scanEmulator = () => {
+    setEmulatorScanning(true);
+    api
+      .scanMainEmulator()
+      .catch(() => {})
+      .finally(() => setEmulatorScanning(false));
+  };
 
   const applyTheme = (t) => {
     setGlobalTheme(t);
@@ -102,18 +108,24 @@ export function MainApp() {
         />
       </div>
 
-      <label className="col main-field">
-        <span className="main-field-label">Emulator</span>
-        <div className="main-select-wrapper">
-          <img src={controllerImg} alt="" className="main-select-icon-img" />
-          <select
-            value={main.emulator || "visualboyadvance"}
-            onChange={(e) => api.updateMainSettings({ emulator: e.target.value })}
-          >
-            <option value="visualboyadvance">Visual Boy Advance (GBA)</option>
-          </select>
-        </div>
-      </label>
+      <div className="col main-field">
+        <span className="main-field-label">Game/Emulator</span>
+        <EmulatorDetectField
+          windowOptions={main.emulator_window_options || []}
+          windows={main.emulator_windows || []}
+          selectedWindow={main.emulator_window}
+          message={main.emulator_message}
+          executablePath={main.emulator_executable_path}
+          appName={main.emulator_app_name || "visualboyadvance-m.exe"}
+          onScan={scanEmulator}
+          onSelectWindow={(window) => api.selectMainEmulatorWindow(window).catch(() => {})}
+          onListOtherWindows={async () => {
+            const result = await api.listWindows();
+            return result.windows || [];
+          }}
+          scanning={emulatorScanning}
+        />
+      </div>
 
       <div className="main-field">
         <span className="main-field-label main-field-label--center">
@@ -216,6 +228,7 @@ export function MainApp() {
               </button>
             </div>
 
+            <div className="settings-dialog__body">
             <label className="col">
               App Theme
               <div className="theme-toggle-row">
@@ -251,8 +264,14 @@ export function MainApp() {
             )}
 
             {setup?.keyboard_map && Object.keys(setup.keyboard_map).length > 0 && (
-              <KeyBindTable keyMap={setup.keyboard_map} disabledInputs={setup.disabled_inputs || []} />
+              <KeyBindTable
+                keyMap={setup.keyboard_map}
+                disabledInputs={setup.disabled_inputs || []}
+                bindingMode={setup.binding_mode || "keyboard"}
+                virtualInputOptions={setup.virtual_input_options || []}
+              />
             )}
+            </div>
           </div>
         </div>
       )}

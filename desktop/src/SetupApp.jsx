@@ -2,8 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { useChatPlaysState } from "./hooks/useChatPlaysState";
 import { ControllerPanel } from "./components/ControllerPanel";
+import { InfoIcon } from "./components/InfoIcon";
+import { VirtualInputCombobox } from "./components/VirtualInputCombobox";
 import { AnarchyPanel, DemocracyPanel } from "./components/GovPanels";
+import { EmulatorDetectField } from "./components/EmulatorDetectField";
 import { closeSetupWindow } from "./openSetupWindow";
+
+const VIGEM_BUS_DOCS_URL = "https://github.com/ViGEm/ViGEmBus";
 
 function keyEventToString(event) {
   const { key, code } = event;
@@ -20,12 +25,18 @@ function keyEventToString(event) {
   return key.toLowerCase();
 }
 
-export function KeyBindTable({ keyMap, disabledInputs = [] }) {
+export function KeyBindTable({
+  keyMap,
+  disabledInputs = [],
+  bindingMode = "keyboard",
+  virtualInputOptions = [],
+}) {
+  const isVirtual = bindingMode === "virtual";
   const [capturing, setCapturing] = useState(null);
   const rowRef = useRef(null);
 
   useEffect(() => {
-    if (!capturing) return;
+    if (isVirtual || !capturing) return;
     function onKey(event) {
       event.preventDefault();
       event.stopPropagation();
@@ -37,36 +48,69 @@ export function KeyBindTable({ keyMap, disabledInputs = [] }) {
     }
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [capturing]);
+  }, [capturing, isVirtual]);
+
+  const commitVirtualInput = (input, value) => {
+    if (!value || value === keyMap[input]) return;
+    api.updateKeyBinding(input, value).catch(() => {});
+  };
+
+  const handleReset = () => {
+    if (!isVirtual) return;
+    api.resetVirtualBindings().catch(() => {});
+  };
 
   return (
-    <div className="col">
-      <span style={{ fontWeight: 600 }}>Mac Key Bindings</span>
-      <table className="keybind-table" ref={rowRef}>
-        <thead>
-          <tr>
-            <th>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                Button
-                <span className="keybind-info-icon">
-                  i
-                  <span className="keybind-tooltip">double click to disable</span>
+    <div className="col keybind-table-wrap">
+      <div className="keybind-table-toolbar">
+        <span style={{ fontWeight: 600 }}>
+          {isVirtual ? "Virtual Controller Bindings" : "Mac Key Bindings"}
+        </span>
+        {isVirtual && (
+          <button type="button" className="keybind-reset-btn" onClick={handleReset}>
+            Reset to defaults
+          </button>
+        )}
+      </div>
+      <div className="keybind-table-frame">
+        <table className="keybind-table keybind-table--head">
+          <colgroup>
+            <col className="keybind-table__col-btn" />
+            <col className="keybind-table__col-input" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>
+                <span className="keybind-table__th-label">
+                  Button
+                  <InfoIcon tip="Double click to disable" fixedOnHover />
                 </span>
-              </span>
-            </th>
-            <th>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                Key
-                <span className="keybind-info-icon">
-                  i
-                  <span className="keybind-tooltip">click a key to rebind it</span>
+              </th>
+              <th>
+                <span className="keybind-table__th-label">
+                  {isVirtual ? "Virtual input" : "Key"}
+                  {isVirtual ? (
+                    <InfoIcon
+                      href={VIGEM_BUS_DOCS_URL}
+                      tip="Click here for documentation and available inputs."
+                      fixedOnHover
+                    />
+                  ) : (
+                    <InfoIcon tip="Click a key to rebind it" fixedOnHover />
+                  )}
                 </span>
-              </span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(keyMap).map(([input, key]) => {
+              </th>
+            </tr>
+          </thead>
+        </table>
+        <div className="keybind-table-scroll">
+          <table className="keybind-table keybind-table--body" ref={rowRef}>
+            <colgroup>
+              <col className="keybind-table__col-btn" />
+              <col className="keybind-table__col-input" />
+            </colgroup>
+            <tbody>
+          {Object.entries(keyMap).map(([input, binding]) => {
             const isDisabled = disabledInputs.includes(input);
             return (
               <tr
@@ -78,19 +122,90 @@ export function KeyBindTable({ keyMap, disabledInputs = [] }) {
                   onDoubleClick={() => api.toggleDisabledInput(input).catch(() => {})}
                 >{input}</td>
                 <td>
-                  <button
-                    type="button"
-                    className={`keybind-cell${capturing === input ? " keybind-cell--capturing" : ""}`}
-                    onClick={() => setCapturing(capturing === input ? null : input)}
-                  >
-                    {capturing === input ? "Press a key…" : key}
-                  </button>
+                  {isVirtual ? (
+                    <VirtualInputCombobox
+                      value={binding}
+                      options={virtualInputOptions}
+                      disabled={isDisabled}
+                      onCommit={(value) => commitVirtualInput(input, value)}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className={`keybind-cell${capturing === input ? " keybind-cell--capturing" : ""}`}
+                      onClick={() => setCapturing(capturing === input ? null : input)}
+                    >
+                      {capturing === input ? "Press a key…" : binding}
+                    </button>
+                  )}
                 </td>
               </tr>
             );
           })}
-        </tbody>
-      </table>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const IS_WIN = /win/i.test(navigator.platform);
+const COMMANDS_LIST_URL = "http://127.0.0.1:8765/commands";
+
+function getAvailableChatInputs(buttonMap, disabledInputs = []) {
+  const disabled = new Set(disabledInputs);
+  return [...new Set(Object.values(buttonMap || {}))]
+    .filter((name) => name && !disabled.has(name))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function formatInputsForClipboard(inputs) {
+  const list = inputs.join(", ");
+  return `Available chat inputs: ${list}\n!commands ${list}`;
+}
+
+async function copyToClipboard(text, setCopied) {
+  try {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  } catch {
+    /* clipboard unavailable */
+  }
+}
+
+function SetupControllerFooter({ buttonMap, disabledInputs = [] }) {
+  const [copiedInputs, setCopiedInputs] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const inputs = getAvailableChatInputs(buttonMap, disabledInputs);
+  const inputsText = formatInputsForClipboard(inputs);
+  const urlLabel = `${COMMANDS_LIST_URL.replace("http://", "").slice(0, 18)}…`;
+
+  return (
+    <div className="setup-controller-footer">
+      <button
+        type="button"
+        className="main-overlay-btn"
+        title={inputsText}
+        onClick={() => copyToClipboard(inputsText, setCopiedInputs)}
+      >
+        <span className="main-overlay-btn__text">Copy chat inputs</span>
+        <span className="icon main-overlay-btn__icon">
+          {copiedInputs ? "check" : "content_copy"}
+        </span>
+      </button>
+      <button
+        type="button"
+        className="main-overlay-btn"
+        title={COMMANDS_LIST_URL}
+        onClick={() => copyToClipboard(COMMANDS_LIST_URL, setCopiedUrl)}
+      >
+        <span className="main-overlay-btn__text">{urlLabel}</span>
+        <span className="icon main-overlay-btn__icon">
+          {copiedUrl ? "check" : "content_copy"}
+        </span>
+      </button>
     </div>
   );
 }
@@ -101,6 +216,7 @@ export function SetupApp() {
   const [demSeconds, setDemSeconds] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [linkFlash, setLinkFlash] = useState("");
+  const [emulatorScanning, setEmulatorScanning] = useState(false);
   const [chatTheme, setChatTheme] = useState("dark");
   const [globalTheme, setGlobalTheme] = useState(
     () => localStorage.getItem("chatplays-theme") || "light"
@@ -115,11 +231,19 @@ export function SetupApp() {
   const seconds = demSeconds ?? setup?.democracy_seconds ?? 15;
 
   useEffect(() => {
-    if (!ready || setup?.setup_link_mode !== "automatic" || setup?.controller !== "GBA") {
+    if (!ready || setup?.controller !== "GBA") {
       return;
     }
     api.scanEmulator().catch(() => {});
-  }, [ready, setup?.setup_link_mode, setup?.controller, setup?.setup_emulator]);
+  }, [ready, setup?.controller]);
+
+  const scanEmulator = () => {
+    setEmulatorScanning(true);
+    api
+      .scanEmulator()
+      .catch(() => {})
+      .finally(() => setEmulatorScanning(false));
+  };
 
   useEffect(() => {
     if (!setup?.auto_link_status) return;
@@ -133,6 +257,11 @@ export function SetupApp() {
   }
 
   const pushSettings = (payload) => api.updateSetupSettings(payload);
+  const autoLinkAvailable = setup.automatic_link_available ?? false;
+  const linkMode =
+    setup.setup_link_mode === "automatic" && autoLinkAvailable
+      ? "automatic"
+      : "manual";
 
   return (
     <div className="setup-shell panel">
@@ -140,7 +269,7 @@ export function SetupApp() {
         <button type="button" className="setup-back-btn" onClick={() => closeSetupWindow()}>
           ← Back
         </button>
-        <span className="setup-topbar__title muted">Test / Setup</span>
+        <span className="setup-topbar__title muted">Setup / Test</span>
         <button type="button" onClick={() => setSettingsOpen(true)}>
           Settings
         </button>
@@ -148,8 +277,9 @@ export function SetupApp() {
 
       <div className="setup-layout">
       <div className="card setup-layout__settings">
-        <div className="row" style={{ alignItems: "flex-start" }}>
-          <div className="col" style={{ flex: 1, alignSelf: "stretch" }}>
+        <div className="setup-panel-inner">
+        <div className="row setup-settings-row">
+          <div className="col setup-settings-col">
             <label className="col">
               Setup or Test?
               <select
@@ -163,32 +293,41 @@ export function SetupApp() {
             <label className="col">
               Controller link
               <select
-                value={setup.setup_link_mode || "manual"}
+                value={linkMode}
                 onChange={(event) =>
                   pushSettings({ setup_link_mode: event.target.value })
                 }
               >
                 <option value="manual">Manual</option>
-                <option value="automatic">Automatic</option>
+                <option value="automatic" disabled={!autoLinkAvailable}>
+                  Automatic
+                </option>
               </select>
             </label>
 
-            {setup.setup_link_mode === "automatic" && (
-              <label className="col">
-                Emulator
-                <select
-                  value={setup.setup_emulator || "visualboyadvance"}
-                  onChange={(event) =>
-                    pushSettings({ setup_emulator: event.target.value })
-                  }
-                >
-                  <option value="visualboyadvance">Visual Boy Advance</option>
-                </select>
-              </label>
+            {setup.controller === "GBA" && linkMode === "manual" && (
+              <div className="col">
+                <span>Game/Emulator</span>
+                <EmulatorDetectField
+                  compact
+                  windowOptions={setup.emulator_window_options || []}
+                  windows={setup.emulator_windows || []}
+                  selectedWindow={setup.emulator_window}
+                  executablePath={setup.emulator_executable_path}
+                  appName={setup.emulator_app_name || "visualboyadvance-m.exe"}
+                  onScan={scanEmulator}
+                  onSelectWindow={(window) => api.selectSetupEmulatorWindow(window).catch(() => {})}
+                  onListOtherWindows={async () => {
+                    const result = await api.listWindows();
+                    return result.windows || [];
+                  }}
+                  scanning={emulatorScanning}
+                />
+              </div>
             )}
 
-            {setup.setup_link_mode === "manual" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            {linkMode === "manual" && (
+              <div className="setup-manual-actions">
                 <button
                   type="button"
                   disabled={setup.manual_setup_active}
@@ -204,7 +343,7 @@ export function SetupApp() {
               </div>
             )}
           </div>
-          <div className="col" style={{ flex: 1 }}>
+          <div className="col setup-settings-col">
             <label className="col">
               Government
               <select
@@ -286,14 +425,11 @@ export function SetupApp() {
             ))}
           </div>
         ) : (
-          setup.setup_link_mode === "automatic" && (
+          linkMode === "automatic" && (
             <div className="setup-link-content">
               <div className="setup-emulator-panel__status">
                 {setup.emulator_detected ? (
-                  <>
-                    <strong>{setup.emulator_name}</strong>
-                    <span className="muted">Window: {setup.emulator_window}</span>
-                  </>
+                  <strong>{setup.emulator_name || "VisualBoy Advance-M"}</strong>
                 ) : (
                   <span className="muted">
                     VisualBoy Advance-M is not running. Link will launch it and open joypad settings.
@@ -312,16 +448,25 @@ export function SetupApp() {
             </div>
           )
         )}
+        </div>
       </div>
 
       <div className="card setup-layout__controller">
+        <div className="setup-panel-inner">
         <ControllerPanel
             controller={setup.controller}
             buttonMap={setup.button_map}
-            highlightInput={setup.manual_setup_current_input}
+            highlightInput={
+              setup.manual_setup_active ? setup.manual_setup_current_input : ""
+            }
             disabledInputs={setup.disabled_inputs || []}
             onButtonPress={(inputName) => api.controllerButton(inputName)}
           />
+        <SetupControllerFooter
+          buttonMap={setup.button_map}
+          disabledInputs={setup.disabled_inputs || []}
+        />
+        </div>
       </div>
 
       {settingsOpen && (
@@ -338,6 +483,7 @@ export function SetupApp() {
               </button>
             </div>
 
+            <div className="settings-dialog__body">
             <label className="col">
               App Theme
               <div className="theme-toggle-row">
@@ -371,8 +517,14 @@ export function SetupApp() {
             </label>
 
             {setup.keyboard_map && Object.keys(setup.keyboard_map).length > 0 && (
-              <KeyBindTable keyMap={setup.keyboard_map} disabledInputs={setup.disabled_inputs || []} />
+              <KeyBindTable
+                keyMap={setup.keyboard_map}
+                disabledInputs={setup.disabled_inputs || []}
+                bindingMode={setup.binding_mode || (IS_WIN ? "virtual" : "keyboard")}
+                virtualInputOptions={setup.virtual_input_options || []}
+              />
             )}
+            </div>
           </div>
         </div>
       )}

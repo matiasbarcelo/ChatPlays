@@ -9,7 +9,7 @@ export async function openSetupWindow() {
   const opened = window.open(
     url,
     "chatplays-setup",
-    "width=1060,height=800,menubar=no,toolbar=no",
+    "width=1060,height=960,menubar=no,toolbar=no",
   );
 
   if (!opened) {

@@ -23,7 +23,7 @@ export function GovHeader({ government, chatTheme, onThemeToggle }) {
           height={44}
           className={isAnarchy ? "" : "gov-icon--democracy"}
         />
-        <strong style={{ fontSize: "1.2rem", color: "#e0e0e0" }}>
+        <strong className="chat-panel__gov-title">
           {isAnarchy ? "Anarchy" : "Democracy"}
         </strong>
       </div>

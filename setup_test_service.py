@@ -14,11 +14,19 @@ from input import Input
 logger = logging.getLogger(__name__)
 
 IS_MAC = platform.system() == "Darwin"
+IS_WIN = platform.system() == "Windows"
 
 from emulator_support import (
     EmulatorDetection,
+    IS_WIN,
     build_auto_link_summary,
     apply_vba_joypad_link,
+    auto_pick_vba_window_option,
+    ensure_vba_emulator_running,
+    format_vba_status_message,
+    highlight_emulator_window,
+    is_automatic_link_compatible,
+    resolve_window_selection,
     scan_for_emulator,
     sync_vba_gba_keyboard,
 )
@@ -29,6 +37,13 @@ if IS_MAC:
     from keyboard_backend import ANALOG_INPUTS, load_keyboard_maps, pynput_key_to_string, set_target_process, write_keyboard_mapping, write_keyboard_mappings
 else:
     from keyboard_backend import load_keyboard_maps, set_target_process, write_keyboard_mappings
+    from virtual_controller_backend import (
+        is_valid_virtual_input,
+        load_virtual_maps,
+        reset_virtual_mappings,
+        virtual_input_options_for,
+        write_virtual_mapping,
+    )
 
 from setup_countdown import SetupCountdownRunner
 
@@ -69,6 +84,8 @@ class SetupTestState:
     )
     button_map: dict = field(default_factory=dict)
     keyboard_map: dict = field(default_factory=dict)
+    binding_mode: str = "keyboard"
+    virtual_input_options: List[str] = field(default_factory=list)
     disabled_inputs: List[str] = field(default_factory=list)
     manual_setup_active: bool = False
     manual_setup_prompt: str = ""
@@ -78,9 +95,14 @@ class SetupTestState:
     emulator_detected: bool = False
     emulator_name: str = ""
     emulator_window: str = ""
+    emulator_windows: List[str] = field(default_factory=list)
+    emulator_window_options: List[dict] = field(default_factory=list)
+    emulator_app_name: str = ""
     emulator_message: str = ""
     emulator_config_path: str = ""
+    emulator_executable_path: str = ""
     auto_link_status: str = ""
+    automatic_link_available: bool = False
     setup_countdown_line: str = ""
     setup_countdown_active: bool = False
 
@@ -97,6 +119,7 @@ class SetupTestService:
         self._keyboard_listener = None
         self._manual_setup_waiting_for_key = False
         self._emulator_detection = EmulatorDetection(found=False)
+        self._program_live = False
         self._sync_from_program()
         self.state.controller = self._controller_label()
         self._refresh_button_map()
@@ -110,6 +133,33 @@ class SetupTestService:
         )
         self._anarchy_thread.start()
         self._democracy_thread.start()
+
+    def set_program_live(self, live: bool):
+        self._program_live = bool(live)
+
+    def on_program_power_changed(self, *, live: bool, prefer_newest_vba: bool = False):
+        self._program_live = bool(live)
+        if self.state.controller != "GBA":
+            self._notify()
+            return
+        self.scan_emulator(prefer_newest_vba=prefer_newest_vba)
+        if not live:
+            with self._lock:
+                if self.state.automatic_link_available:
+                    self.state.setup_link_mode = "automatic"
+        self._notify()
+
+    def _refresh_automatic_link_availability(self):
+        with self._lock:
+            available = is_automatic_link_compatible(
+                self.state.controller,
+                self.state.setup_emulator,
+                self.state.emulator_window,
+                self.state.emulator_window_options,
+            )
+            self.state.automatic_link_available = available
+            if self.state.setup_link_mode == "automatic" and not available:
+                self.state.setup_link_mode = "manual"
 
     def get_state(self) -> SetupTestState:
         with self._lock:
@@ -138,11 +188,19 @@ class SetupTestService:
     def _refresh_button_map(self):
         self.state.button_map = self.program.setupTest.controller.getButtonsForUiDict()
         controller_name = self._controller_class_name()
-        try:
-            maps = load_keyboard_maps()
-            self.state.keyboard_map = maps.get(controller_name, {})
-        except Exception:
-            self.state.keyboard_map = {}
+        if IS_MAC:
+            try:
+                maps = load_keyboard_maps()
+                self.state.keyboard_map = maps.get(controller_name, {})
+            except Exception:
+                self.state.keyboard_map = {}
+            self.state.binding_mode = "keyboard"
+            self.state.virtual_input_options = []
+            return
+
+        self.state.keyboard_map = load_virtual_maps().get(controller_name, {})
+        self.state.binding_mode = "virtual"
+        self.state.virtual_input_options = virtual_input_options_for(self.state.controller)
 
     def _controller_label(self) -> str:
         name = type(self.program.setupTest.controller).__name__
@@ -281,6 +339,13 @@ class SetupTestService:
         if normalized not in ("manual", "automatic"):
             return
         if normalized == "automatic":
+            if not is_automatic_link_compatible(
+                self.state.controller,
+                self.state.setup_emulator,
+                self.state.emulator_window,
+                self.state.emulator_window_options,
+            ):
+                return
             self.cancel_manual_setup()
         with self._lock:
             self.state.setup_link_mode = normalized
@@ -288,20 +353,64 @@ class SetupTestService:
             self.scan_emulator()
         else:
             with self._lock:
-                self.state.emulator_detected = False
-                self.state.emulator_name = ""
-                self.state.emulator_window = ""
-                self.state.emulator_message = ""
-                self.state.emulator_config_path = ""
                 self.state.auto_link_status = ""
+            self._refresh_automatic_link_availability()
             self._notify()
+            return
+        self._refresh_automatic_link_availability()
+        self._notify()
 
-    def scan_emulator(self):
+    def scan_emulator(self, *, prefer_newest_vba: bool = False):
+        previous = self.state.emulator_window
         detection = scan_for_emulator(
             self.state.controller,
             emulator_id=self.state.setup_emulator,
+            selected_window=previous,
         )
-        self._apply_emulator_detection(detection)
+        self._apply_emulator_detection(
+            detection,
+            previous_window=previous,
+            prefer_newest_vba=prefer_newest_vba,
+        )
+
+    def select_emulator_window(self, window_id: str):
+        normalized = window_id.strip()
+        if not normalized:
+            return
+        with self._lock:
+            options = list(self.state.emulator_window_options)
+            titles = list(self.state.emulator_windows)
+        selection = resolve_window_selection(
+            normalized,
+            known_options=options,
+            known_titles=titles,
+        )
+        if selection is None:
+            return
+        title = selection["title"]
+        app_name = selection.get("app_name") or self.state.emulator_app_name or "visualboyadvance-m.exe"
+        with self._lock:
+            self.state.emulator_window = selection["id"]
+            self.state.emulator_detected = True
+            self.state.emulator_app_name = app_name
+            self.state.emulator_message = f"Targeting window “{title}”."
+        highlight_emulator_window(self.state.emulator_window, title=title, app_name=app_name)
+        self._emulator_detection = EmulatorDetection(
+            found=True,
+            emulator_id=self._emulator_detection.emulator_id or "visualboyadvance",
+            display_name=self.state.emulator_name or self._emulator_detection.display_name,
+            app_name=app_name,
+            window_title=title,
+            window_id=self.state.emulator_window,
+            windows=list(self.state.emulator_windows),
+            window_options=list(self.state.emulator_window_options),
+            config_path=self.state.emulator_config_path,
+            executable_path=self.state.emulator_executable_path,
+            message=self.state.emulator_message,
+        )
+        set_target_process(app_name)
+        self._refresh_automatic_link_availability()
+        self._notify()
 
     def set_setup_emulator(self, emulator_id: str):
         normalized = emulator_id.strip().lower()
@@ -312,19 +421,83 @@ class SetupTestService:
         if self.state.setup_link_mode == "automatic":
             self.scan_emulator()
         else:
+            self._refresh_automatic_link_availability()
             self._notify()
 
-    def _apply_emulator_detection(self, detection: EmulatorDetection):
+    def _apply_emulator_detection(
+        self,
+        detection: EmulatorDetection,
+        *,
+        previous_window: str = "",
+        prefer_newest_vba: bool = False,
+    ):
         self._emulator_detection = detection
         with self._lock:
-            self.state.emulator_detected = detection.found
-            self.state.emulator_name = detection.display_name if detection.found else ""
-            self.state.emulator_window = detection.window_title if detection.found else ""
+            options = list(detection.window_options)
+            titles = list(detection.windows)
+            if not titles and options:
+                titles = [option["title"] for option in options]
+            if detection.found and detection.window_title and detection.window_title not in titles:
+                titles = [detection.window_title, *titles]
+            self.state.emulator_window_options = options
+            self.state.emulator_windows = titles
+            self.state.emulator_detected = bool(options or titles)
+            self.state.emulator_name = detection.display_name if (options or titles) else ""
+
+            keep_previous = False
+            if previous_window:
+                for option in options:
+                    if option["id"] == previous_window or option["title"] == previous_window:
+                        keep_previous = True
+                        break
+                if not keep_previous and resolve_window_selection(previous_window):
+                    keep_previous = True
+
+            if options and (len(options) == 1 or prefer_newest_vba or not keep_previous):
+                selected_id, _selected_title = auto_pick_vba_window_option(
+                    options,
+                    previous_window if keep_previous else "",
+                    prefer_newest=prefer_newest_vba,
+                )
+                selected = selected_id
+            else:
+                selected = detection.window_id or detection.window_title if (options or titles) else ""
+                if previous_window and keep_previous:
+                    for option in options:
+                        if option["id"] == previous_window or option["title"] == previous_window:
+                            selected = option["id"]
+                            break
+                    else:
+                        custom = resolve_window_selection(previous_window)
+                        if custom:
+                            selected = custom["id"]
+                            self.state.emulator_app_name = custom.get("app_name") or detection.app_name
+                            self.state.emulator_detected = True
+                        elif previous_window in titles:
+                            selected = previous_window
+
+            self.state.emulator_window = selected
+            self.state.emulator_app_name = detection.app_name if (options or titles) else ""
+            if self.state.setup_link_mode == "automatic" and options:
+                self.state.emulator_message = format_vba_status_message(
+                    len(options),
+                    config_path=detection.config_path or "",
+                )
+            elif keep_previous and resolve_window_selection(previous_window):
+                custom = resolve_window_selection(previous_window)
+                if custom and custom["id"] == selected:
+                    self.state.emulator_message = f"Targeting window “{custom['title']}”."
+                else:
+                    self.state.emulator_message = detection.message
+            else:
+                self.state.emulator_message = detection.message
             self.state.emulator_config_path = detection.config_path or ""
-            self.state.emulator_message = detection.message
-            if not detection.found:
+            self.state.emulator_executable_path = detection.executable_path or ""
+            if not options and not titles:
                 self.state.auto_link_status = ""
-        set_target_process(detection.app_name if detection.found else "")
+        app_name = self.state.emulator_app_name if self.state.emulator_window else ""
+        set_target_process(app_name)
+        self._refresh_automatic_link_availability()
         self._notify()
 
     def auto_link_emulator(self):
@@ -345,6 +518,7 @@ class SetupTestService:
             detection = scan_for_emulator(
                 self.state.controller,
                 emulator_id=self.state.setup_emulator,
+                selected_window=self.state.emulator_window,
             )
             self._apply_emulator_detection(detection)
 
@@ -352,15 +526,53 @@ class SetupTestService:
             mapping, source, wrote_config = sync_vba_gba_keyboard(config_path)
             controller_name = self._controller_class_name()
 
-            write_keyboard_mappings(controller_name, mapping)
-            self.program.setupTest.controller.reload_keyboard_mappings()
+            if not IS_WIN:
+                write_keyboard_mappings(controller_name, mapping)
+                self.program.setupTest.controller.reload_keyboard_mappings()
 
             joypad_opened, was_already_running, restarted, game_restored = apply_vba_joypad_link(
-                mapping, detection, config_path, reload_config=wrote_config
+                mapping, detection, config_path, reload_config=wrote_config and not IS_WIN
             )
 
-            summary = build_auto_link_summary(mapping, source, wrote_config=wrote_config)
-            if joypad_opened and restarted and game_restored:
+            summary = build_auto_link_summary(
+                mapping, source, wrote_config=wrote_config, virtual_controller=IS_WIN
+            )
+            if IS_WIN:
+                link_intro = (
+                    "The ChatPlays virtual controller (ViGEm) is what you are linking to the emulator — "
+                    "not your physical gamepad."
+                )
+                if joypad_opened and restarted:
+                    status = (
+                        f"{summary}\n{link_intro}\nRestarted VisualBoy Advance-M and opened joypad "
+                        "configuration. In VBA-M, assign each GBA button to the virtual Xbox "
+                        "controller that ChatPlays creates."
+                    )
+                elif joypad_opened and was_already_running:
+                    status = (
+                        f"{summary}\n{link_intro}\nFocused VisualBoy Advance-M and opened joypad "
+                        "configuration. In VBA-M, assign each GBA button to the virtual Xbox "
+                        "controller that ChatPlays creates."
+                    )
+                elif joypad_opened:
+                    status = (
+                        f"{summary}\n{link_intro}\nLaunched VisualBoy Advance-M and opened joypad "
+                        "configuration. In VBA-M, assign each GBA button to the virtual Xbox "
+                        "controller that ChatPlays creates."
+                    )
+                elif was_already_running:
+                    status = (
+                        f"{summary}\n{link_intro}\nFound VisualBoy Advance-M but could not open "
+                        "joypad configuration automatically. Open Options → Input → Configure… "
+                        "and map each GBA button to the ChatPlays virtual controller."
+                    )
+                else:
+                    status = (
+                        f"{summary}\n{link_intro}\nCould not launch or focus VBA-M. Install "
+                        "VisualBoy Advance-M, then try again. If it is already open, open "
+                        "Options → Input → Configure… and map the ChatPlays virtual controller."
+                    )
+            elif joypad_opened and restarted and game_restored:
                 status = (
                     f"{summary}\nRestarted VisualBoy Advance-M, restored your game from "
                     "save slot 8, and opened joypad configuration."
@@ -415,6 +627,7 @@ class SetupTestService:
         if self.state.setup_link_mode == "automatic":
             self.scan_emulator()
         else:
+            self._refresh_automatic_link_availability()
             self._notify()
 
     def set_time_lengths(self, tap: float, press: float, hold: float, default: str):
@@ -547,6 +760,8 @@ class SetupTestService:
                 self.program.setupTest.setDemocracyThreadStatus(True)
 
     def _begin_manual_setup_step(self):
+        completed = False
+        input_name = None
         with self._lock:
             if not self.state.manual_setup_active:
                 return
@@ -561,20 +776,21 @@ class SetupTestService:
                 self._manual_setup_inputs = []
                 self._manual_setup_index = 0
                 self._resume_gov_threads()
-                self._notify()
-                return
-
-            input_name = self._manual_setup_inputs[self._manual_setup_index]
-            step = self._manual_setup_index + 1
-            total = len(self._manual_setup_inputs)
-            self.state.manual_setup_current_input = input_name
-            self.program.setupTest.setCountdown(self.state.countdown_seconds)
-            self.state.manual_setup_prompt = (
-                f"Step {step}/{total}: focus your emulator and bind "
-                f'"{input_name}" when it presses.'
-            )
+                completed = True
+            else:
+                input_name = self._manual_setup_inputs[self._manual_setup_index]
+                step = self._manual_setup_index + 1
+                total = len(self._manual_setup_inputs)
+                self.state.manual_setup_current_input = input_name
+                self.program.setupTest.setCountdown(self.state.countdown_seconds)
+                self.state.manual_setup_prompt = (
+                    f"Step {step}/{total}: focus your emulator and bind "
+                    f'"{input_name}" when it presses.'
+                )
 
         self._notify()
+        if completed:
+            return
         self._countdown_runner.start_manual_step(input_name)
 
     def _start_keyboard_listener(self):
@@ -612,15 +828,35 @@ class SetupTestService:
         self._notify()
 
     def update_key_binding(self, input_name: str, key_string: str):
-        """Directly update a single key binding for the current controller."""
+        """Update a single binding for the current controller."""
         controller_name = self._controller_class_name()
+        value = key_string.strip()
+        if not value:
+            return
         try:
-            write_keyboard_mapping(controller_name, input_name, key_string)
-            self.program.setupTest.controller.reload_keyboard_mappings()
+            if IS_MAC:
+                write_keyboard_mapping(controller_name, input_name, value)
+                self.program.setupTest.controller.reload_keyboard_mappings()
+            else:
+                if not is_valid_virtual_input(controller_name, value):
+                    return
+                if not write_virtual_mapping(controller_name, input_name, value):
+                    return
+                self.program.setupTest.controller.reload_virtual_mappings()
         except Exception:
             pass
         with self._lock:
-            self.state.keyboard_map[input_name] = key_string
+            self.state.keyboard_map[input_name] = value
+        self._notify()
+
+    def reset_virtual_bindings(self):
+        if IS_MAC:
+            return
+        controller_name = self._controller_class_name()
+        reset_virtual_mappings(controller_name)
+        self.program.setupTest.controller.reload_virtual_mappings()
+        with self._lock:
+            self.state.keyboard_map = load_virtual_maps().get(controller_name, {})
         self._notify()
 
     def _handle_manual_key_captured(self, key_string: str):

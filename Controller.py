@@ -11,6 +11,8 @@ if IS_MAC:
 else:
     import vgamepad as vg
 
+    from virtual_controller_backend import ANALOG_VIRTUAL_METHODS, default_map_for, load_virtual_maps
+
 
 class Controller:
     def __init__(self):
@@ -59,7 +61,11 @@ class Controller:
             self.executeXbox(input, timeLength)
 
     def executeXbox(self, input, timeLength, isAnalog=False):
-        button = getattr(vg.XUSB_BUTTON, self.inputs[input])
+        target = self.inputs[input]
+        if target in ANALOG_VIRTUAL_METHODS:
+            self._execute_analog(target, timeLength)
+            return
+        button = getattr(vg.XUSB_BUTTON, target)
         self.controller.press_button(button=button)
         self.controller.update()
         time.sleep(timeLength)
@@ -67,16 +73,43 @@ class Controller:
         self.controller.update()
 
     def executePlayStation(self, input, timeLength, isAnalog=False):
-        if input in ("up", "down", "left", "right"):
-            extension = vg.DS4_DPAD_DIRECTIONS
-        else:
-            extension = vg.DS4_BUTTONS
-        button = getattr(extension, self.inputs[input])
+        target = self.inputs[input]
+        if target in ANALOG_VIRTUAL_METHODS:
+            self._execute_analog(target, timeLength)
+            return
+        button = self._resolve_ds4_button(target)
         self.controller.press_button(button=button)
         self.controller.update()
         time.sleep(timeLength)
         self.controller.release_button(button=button)
         self.controller.update()
+
+    def _resolve_ds4_button(self, target: str):
+        for extension in (vg.DS4_DPAD_DIRECTIONS, vg.DS4_BUTTONS):
+            if hasattr(extension, target):
+                return getattr(extension, target)
+        raise AttributeError(target)
+
+    def _execute_analog(self, method_name: str, timeLength: float):
+        if method_name in ("left_trigger_float", "right_trigger_float"):
+            getattr(self.controller, method_name)(1.0)
+            self.controller.update()
+            time.sleep(timeLength)
+            getattr(self.controller, method_name)(0.0)
+            self.controller.update()
+            return
+        if method_name in ("left_joystick_float", "right_joystick_float"):
+            getattr(self.controller, method_name)(0.0, 1.0)
+            self.controller.update()
+            time.sleep(timeLength)
+            getattr(self.controller, method_name)(0.0, 0.0)
+            self.controller.update()
+
+    def _apply_virtual_maps(self):
+        if self.use_keyboard:
+            return
+        class_name = type(self).__name__
+        self.inputs = load_virtual_maps().get(class_name, default_map_for(class_name))
 
     def getRegexStr(self):
         regexStr = "|".join(self.inputs.keys())
@@ -107,6 +140,11 @@ class Controller:
         key_map = _KEYBOARD_MAPS.get(class_name, {})
         self.controller = KeyboardBackend(class_name, key_map)
 
+    def reload_virtual_mappings(self):
+        if self.use_keyboard:
+            return
+        self._apply_virtual_maps()
+
 
 class GBAController(Controller):
     def __init__(self):
@@ -136,6 +174,7 @@ class GBAController(Controller):
             "selectButton": "select",
             "startButton": "start",
         }
+        self._apply_virtual_maps()
 
 
 class XboxController(Controller):
@@ -181,6 +220,7 @@ class XboxController(Controller):
             "backButton": "back",
             "homeButton": "home",
         }
+        self._apply_virtual_maps()
 
 
 class PlayStationController(Controller):
@@ -224,3 +264,4 @@ class PlayStationController(Controller):
             "lStickButton_2": "lstick",
             "rStickButton_2": "rstick",
         }
+        self._apply_virtual_maps()

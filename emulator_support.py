@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import re
+import shutil
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Iterator, List, Optional
 
 logger = logging.getLogger(__name__)
 
 IS_MAC = platform.system() == "Darwin"
+IS_WIN = platform.system() == "Windows"
 
 VBA_JOY0_TO_INPUT = {
     "Joy0_Up": "up",
@@ -124,6 +127,33 @@ VBA_CONFIG_CANDIDATES = (
     Path.home() / ".vbam/vbam.ini",
 )
 
+VBA_WINDOWS_EXE_NAMES = (
+    "visualboyadvance-m.exe",
+    "VisualBoyAdvance-M.exe",
+    "vbam.exe",
+)
+
+VBA_WINDOW_TITLE_KEYWORDS = (
+    "visualboyadvance",
+    "visual boy advance",
+    "vba-m",
+)
+
+_JUNK_WINDOW_TITLES = frozenset(
+    {
+        "Default IME",
+        "MSCTFIME UI",
+        "Program Manager",
+    }
+)
+
+
+@dataclass
+class EmulatorWindow:
+    title: str
+    app_name: str = "visualboyadvance-m.exe"
+    hwnd: int = 0
+
 
 @dataclass
 class EmulatorDetection:
@@ -132,7 +162,11 @@ class EmulatorDetection:
     display_name: str = ""
     app_name: str = ""
     window_title: str = ""
+    window_id: str = ""
+    windows: List[str] = field(default_factory=list)
+    window_options: List[dict] = field(default_factory=list)
     config_path: str = ""
+    executable_path: str = ""
     message: str = ""
 
 
@@ -175,8 +209,51 @@ def _find_vba_process_via_pgrep() -> Optional[str]:
     return parts[1] if len(parts) > 1 else parts[0]
 
 
-def _find_vbam_config() -> Optional[Path]:
+def _vba_windows_install_dirs() -> List[Path]:
+    dirs: List[Path] = []
+    for env_name in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+        base = os.environ.get(env_name, "")
+        if not base:
+            continue
+        for folder in (
+            "VisualBoyAdvance-M",
+            "visualboyadvance-m",
+            "VBA-M",
+            Path("Programs") / "visualboyadvance-m",
+        ):
+            dirs.append(Path(base) / folder)
+    return dirs
+
+
+def _iter_vbam_config_candidates() -> Iterator[Path]:
+    seen: set[Path] = set()
     for candidate in VBA_CONFIG_CANDIDATES:
+        resolved = candidate.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            yield candidate
+
+    if IS_WIN:
+        for env_name in ("LOCALAPPDATA", "APPDATA"):
+            base = os.environ.get(env_name, "")
+            if not base:
+                continue
+            for folder in ("visualboyadvance-m", "VBA-M", "VisualBoyAdvance-M"):
+                candidate = Path(base) / folder / "vbam.ini"
+                resolved = candidate.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    yield candidate
+        for install_dir in _vba_windows_install_dirs():
+            candidate = install_dir / "vbam.ini"
+            resolved = candidate.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                yield candidate
+
+
+def _find_vbam_config() -> Optional[Path]:
+    for candidate in _iter_vbam_config_candidates():
         if candidate.is_file():
             return candidate
     return None
@@ -185,7 +262,7 @@ def _find_vbam_config() -> Optional[Path]:
 def _all_vbam_configs() -> list[Path]:
     seen: set[Path] = set()
     configs: list[Path] = []
-    for candidate in VBA_CONFIG_CANDIDATES:
+    for candidate in _iter_vbam_config_candidates():
         resolved = candidate.resolve()
         if candidate.is_file() and resolved not in seen:
             seen.add(resolved)
@@ -193,92 +270,931 @@ def _all_vbam_configs() -> list[Path]:
     return configs
 
 
-def _detect_vba_on_mac() -> EmulatorDetection:
-    script = """
-set output to ""
-tell application "System Events"
-    repeat with proc in (every application process whose background only is false)
-        set procName to name of proc
-        if procName contains "visualboyadvance" or procName contains "VisualBoyAdvance" or procName contains "vbam" or procName contains "VBA" then
-            set windowTitle to ""
-            try
-                if (count of windows of proc) > 0 then
-                    set windowTitle to name of front window of proc
-                end if
-            end try
-            set output to procName & "|||" & windowTitle
-            exit repeat
-        end if
-    end repeat
-end tell
-return output
-"""
-    raw, osascript_error = _run_osascript(script, timeout=OSASCRIPT_UI_TIMEOUT)
+def _detect_vba_on_mac(selected_window: str = "") -> EmulatorDetection:
     config_path = _find_vbam_config()
-    pgrep_name = _find_vba_process_via_pgrep()
+    exe_path = resolve_vba_icon_path()
+    windows = _list_vba_windows_mac()
+    options = build_emulator_window_options(windows)
+    titles = [window.title for window in windows]
 
-    if not raw and pgrep_name:
-        app_name = pgrep_name
-        window_title = pgrep_name
+    if options:
+        selected_id, selected_title = pick_window_option(options, selected_window)
         config_note = f" Config: {config_path.name}" if config_path else " Using VBA default keys."
-        note = ""
-        if osascript_error:
-            note = " (Grant Terminal/Python Accessibility access in System Settings for window focus.)"
+        count_note = f" ({len(options)} window{'s' if len(options) != 1 else ''} found)"
+        app_name = next((window.app_name for window in windows if window.title == selected_title), "VisualBoyAdvance-M")
         return EmulatorDetection(
             found=True,
             emulator_id="visualboyadvance",
             display_name="VisualBoy Advance",
             app_name=app_name,
-            window_title=window_title,
+            window_title=selected_title,
+            window_id=selected_id,
+            windows=titles,
+            window_options=options,
             config_path=str(config_path) if config_path else "",
-            message=f"Found running process “{app_name}”.{config_note}{note}",
+            executable_path=exe_path,
+            message=f"Targeting “{selected_title}”.{count_note}{config_note}",
         )
 
-    if not raw:
-        if pgrep_name or config_path:
-            message = "VisualBoy Advance is not running. Open the emulator, then scan again."
-            if osascript_error and "Not authorized" in osascript_error:
-                message = (
-                    "Could not inspect running apps. Grant Accessibility access to "
-                    "Terminal or Python in System Settings → Privacy & Security → Accessibility."
-                )
-            return EmulatorDetection(
-                found=False,
-                emulator_id="visualboyadvance",
-                display_name="VisualBoy Advance",
-                config_path=str(config_path) if config_path else "",
-                message=message,
-            )
+    pgrep_name = _find_vba_process_via_pgrep()
+    if pgrep_name or config_path:
+        message = "VisualBoy Advance is not running. Open the emulator, then refresh the window list."
         return EmulatorDetection(
             found=False,
             emulator_id="visualboyadvance",
             display_name="VisualBoy Advance",
-            message="VisualBoy Advance not found. Launch VBA-M, then click Scan for Emulator.",
+            config_path=str(config_path) if config_path else "",
+            executable_path=exe_path,
+            message=message,
         )
 
-    parts = raw.split("|||", 1)
-    app_name = parts[0].strip()
-    window_title = parts[1].strip() if len(parts) > 1 else ""
-
-    if not window_title:
-        window_title = app_name
-
-    config_note = f" Config: {config_path.name}" if config_path else " Using VBA default keys."
-
     return EmulatorDetection(
-        found=True,
+        found=False,
         emulator_id="visualboyadvance",
         display_name="VisualBoy Advance",
-        app_name=app_name,
-        window_title=window_title,
-        config_path=str(config_path) if config_path else "",
-        message=f"Targeting window “{window_title}”.{config_note}",
+        executable_path=exe_path,
+        message="VisualBoy Advance not found. Launch VBA-M, then refresh the window list.",
+    )
+
+
+def _find_vba_executable() -> Optional[Path]:
+    repo_root = Path(__file__).resolve().parent
+    for candidate in (
+        repo_root / "visualboyadvance-m.exe",
+        Path.cwd() / "visualboyadvance-m.exe",
+    ):
+        if candidate.is_file():
+            return candidate.resolve()
+
+    for install_dir in _vba_windows_install_dirs():
+        for exe_name in VBA_WINDOWS_EXE_NAMES:
+            candidate = install_dir / exe_name
+            if candidate.is_file():
+                return candidate.resolve()
+
+    for exe_name in VBA_WINDOWS_EXE_NAMES:
+        found = shutil.which(exe_name)
+        if found:
+            return Path(found).resolve()
+    return None
+
+
+def _find_vba_app_bundle_mac() -> Optional[Path]:
+    candidates = (
+        Path("/Applications/VisualBoyAdvance-M.app"),
+        Path("/Applications/VisualBoyAdvance.app"),
+        Path("/Applications/vbam.app"),
+        Path.home() / "Applications/VisualBoyAdvance-M.app",
+        Path.home() / "Applications/VisualBoyAdvance.app",
+    )
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def resolve_vba_icon_path() -> str:
+    if IS_WIN:
+        exe = _find_vba_executable()
+        return str(exe) if exe else ""
+    if IS_MAC:
+        bundle = _find_vba_app_bundle_mac()
+        return str(bundle) if bundle else ""
+    return ""
+
+
+def _find_running_vba_process_windows() -> Optional[str]:
+    for exe_name in VBA_WINDOWS_EXE_NAMES:
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"IMAGENAME eq {exe_name}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if exe_name.lower() in result.stdout.lower():
+            return exe_name
+    return None
+
+
+def _vba_process_pids_windows() -> set[int]:
+    pids: set[int] = set()
+    for exe_name in VBA_WINDOWS_EXE_NAMES:
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"IMAGENAME eq {exe_name}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.strip().splitlines():
+            parts = [part.strip('"') for part in line.split('","')]
+            if len(parts) < 2:
+                parts = [part.strip('"') for part in line.split(",")]
+            if len(parts) >= 2 and parts[1].isdigit():
+                pids.add(int(parts[1]))
+    return pids
+
+
+def _list_vba_windows_windows() -> List[EmulatorWindow]:
+    if not IS_WIN:
+        return []
+
+    import ctypes
+    from ctypes import wintypes
+
+    vba_pids = _vba_process_pids_windows()
+    if not vba_pids:
+        return []
+
+    user32 = ctypes.windll.user32
+    results: List[EmulatorWindow] = []
+    seen_hwnds: set[int] = set()
+    default_app_name = "visualboyadvance-m.exe"
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def callback(hwnd, _):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        hwnd_value = int(hwnd)
+        if hwnd_value in seen_hwnds:
+            return True
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value not in vba_pids:
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        title = buffer.value.strip()
+        if not title:
+            return True
+        seen_hwnds.add(hwnd_value)
+        results.append(
+            EmulatorWindow(
+                title=title,
+                app_name=default_app_name,
+                hwnd=hwnd_value,
+            )
+        )
+        return True
+
+    user32.EnumWindows(callback, 0)
+    return results
+
+
+def _list_vba_windows_mac() -> List[EmulatorWindow]:
+    if not IS_MAC:
+        return []
+
+    script = """
+set output to ""
+tell application "System Events"
+    repeat with proc in (every application process whose background only is false)
+        set procName to name of proc
+        if procName contains "visualboyadvance" or procName contains "VisualBoyAdvance" or procName contains "vbam" then
+            repeat with win in (every window of proc)
+                try
+                    set winTitle to name of win
+                    if winTitle is not "" then
+                        set output to output & procName & "|||" & winTitle & linefeed
+                    end if
+                end try
+            end repeat
+        end if
+    end repeat
+end tell
+return output
+"""
+    raw, _ = _run_osascript(script, timeout=OSASCRIPT_UI_TIMEOUT)
+    if not raw:
+        pgrep_name = _find_vba_process_via_pgrep()
+        if pgrep_name:
+            return [EmulatorWindow(title=pgrep_name, app_name=pgrep_name)]
+        return []
+
+    windows: List[EmulatorWindow] = []
+    for index, line in enumerate(raw.splitlines()):
+        if "|||" not in line:
+            continue
+        app_name, title = line.split("|||", 1)
+        app_name = app_name.strip()
+        title = title.strip()
+        if not title:
+            continue
+        windows.append(
+            EmulatorWindow(
+                title=title,
+                app_name=app_name or "VisualBoyAdvance-M",
+                hwnd=index + 1,
+            )
+        )
+    return windows
+
+
+def build_emulator_window_options(windows: List[EmulatorWindow]) -> List[dict]:
+    title_counts: Dict[str, int] = {}
+    for window in windows:
+        title_counts[window.title] = title_counts.get(window.title, 0) + 1
+
+    title_index: Dict[str, int] = {}
+    options: List[dict] = []
+    for index, window in enumerate(windows):
+        app_name = window.app_name or "visualboyadvance-m.exe"
+        base_label = f"[{app_name}]: {window.title}"
+        if title_counts[window.title] > 1:
+            title_index[window.title] = title_index.get(window.title, 0) + 1
+            label = f"{base_label} ({title_index[window.title]})"
+        else:
+            label = base_label
+        window_id = str(window.hwnd) if window.hwnd else f"{window.app_name}::{window.title}::{index}"
+        options.append({"id": window_id, "title": window.title, "label": label})
+    return options
+
+
+def pick_window_option(options: List[dict], selected: str = "") -> tuple[str, str]:
+    if not options:
+        return "", ""
+    if selected:
+        for option in options:
+            if option["id"] == selected or option["title"] == selected:
+                return option["id"], option["title"]
+    return options[0]["id"], options[0]["title"]
+
+
+def _option_by_id(options: List[dict], window_id: str) -> Optional[dict]:
+    for option in options:
+        if option.get("id") == window_id:
+            return option
+    return None
+
+
+def is_automatic_link_compatible(
+    controller: str,
+    setup_emulator: str,
+    emulator_window: str,
+    emulator_window_options: Optional[List[dict]] = None,
+) -> bool:
+    """Automatic controller linking supports GBA + a detected VisualBoy Advance window."""
+    if controller != "GBA":
+        return False
+    if setup_emulator != "visualboyadvance":
+        return False
+    if not emulator_window:
+        return False
+    return _option_by_id(emulator_window_options or [], emulator_window) is not None
+
+
+def _vba_windows_present() -> bool:
+    if IS_WIN:
+        return bool(_list_vba_windows_windows())
+    if IS_MAC:
+        return bool(_list_vba_windows_mac())
+    return False
+
+
+def ensure_vba_emulator_running() -> bool:
+    """Launch VisualBoy Advance-M when no instance is running."""
+    if _vba_windows_present():
+        return True
+    return launch_vba_emulator(
+        EmulatorDetection(found=False, emulator_id="visualboyadvance")
+    )
+
+
+def auto_pick_vba_window_option(
+    options: List[dict],
+    selected: str = "",
+    *,
+    prefer_newest: bool = False,
+) -> tuple[str, str]:
+    if not options:
+        return "", ""
+    if len(options) == 1:
+        return options[0]["id"], options[0]["title"]
+    if selected:
+        for option in options:
+            if option["id"] == selected or option["title"] == selected:
+                return option["id"], option["title"]
+    if prefer_newest:
+        numeric_options = []
+        for option in options:
+            try:
+                numeric_options.append((int(option["id"]), option))
+            except ValueError:
+                continue
+        if numeric_options:
+            _, option = max(numeric_options, key=lambda item: item[0])
+            return option["id"], option["title"]
+    return options[0]["id"], options[0]["title"]
+
+
+def format_vba_status_message(
+    window_count: int,
+    *,
+    config_path: str = "",
+    running: bool = True,
+) -> str:
+    if not running or window_count <= 0:
+        return "VisualBoy Advance-M is not running."
+    if window_count == 1:
+        message = "VisualBoy Advance-M ready."
+    else:
+        message = f"VisualBoy Advance-M ready ({window_count} windows found)."
+    if config_path:
+        message += f" Config: {Path(config_path).name}"
+    return message
+
+
+def _window_title_for_hwnd(hwnd: int) -> str:
+    if not IS_WIN:
+        return ""
+
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    if not user32.IsWindow(hwnd):
+        return ""
+    length = user32.GetWindowTextLengthW(hwnd)
+    if length <= 0:
+        return ""
+    buffer = ctypes.create_unicode_buffer(length + 1)
+    user32.GetWindowTextW(hwnd, buffer, length + 1)
+    return buffer.value.strip()
+
+
+def _process_exe_for_hwnd(hwnd: int) -> str:
+    if not IS_WIN:
+        return ""
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    if not pid.value:
+        return ""
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+    if not handle:
+        return ""
+    try:
+        size = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+            return Path(buffer.value).name
+    finally:
+        kernel32.CloseHandle(handle)
+    return ""
+
+
+def _is_user_visible_window_windows(hwnd: int) -> bool:
+    """True when a top-level window is actually shown to the user (Alt+Tab style)."""
+    if not IS_WIN:
+        return False
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    if not user32.IsWindow(hwnd):
+        return False
+    if not user32.IsWindowVisible(hwnd):
+        return False
+
+    GWL_EXSTYLE = -20
+    WS_EX_TOOLWINDOW = 0x00000080
+    WS_EX_APPWINDOW = 0x00040000
+    ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    if (ex_style & WS_EX_TOOLWINDOW) and not (ex_style & WS_EX_APPWINDOW):
+        return False
+
+    try:
+        dwmapi = ctypes.windll.dwmapi
+        cloaked = ctypes.c_int()
+        if dwmapi.DwmGetWindowAttribute(
+            wintypes.HWND(hwnd),
+            14,  # DWMWA_CLOAKED
+            ctypes.byref(cloaked),
+            ctypes.sizeof(cloaked),
+        ) == 0 and cloaked.value:
+            return False
+    except OSError:
+        pass
+
+    rect = wintypes.RECT()
+    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        return False
+    if rect.right - rect.left <= 0 or rect.bottom - rect.top <= 0:
+        return False
+
+    class TITLEBARINFO(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", ctypes.c_uint),
+            ("rcTitleBar", wintypes.RECT),
+            ("rgstate", ctypes.c_uint * 6),
+        ]
+
+    title_bar = TITLEBARINFO()
+    title_bar.cbSize = ctypes.sizeof(TITLEBARINFO)
+    if user32.GetTitleBarInfo(hwnd, ctypes.byref(title_bar)):
+        if title_bar.rgstate[0] & 0x8000:  # STATE_SYSTEM_INVISIBLE
+            return False
+
+    owner = user32.GetWindow(hwnd, 4)  # GW_OWNER
+    if owner:
+        owner_style = user32.GetWindowLongW(owner, GWL_EXSTYLE)
+        if (owner_style & WS_EX_TOOLWINDOW) and not (owner_style & WS_EX_APPWINDOW):
+            return False
+
+    return True
+
+
+def _list_all_windows_windows() -> List[EmulatorWindow]:
+    if not IS_WIN:
+        return []
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    own_pid = os.getpid()
+    results: List[EmulatorWindow] = []
+    seen_hwnds: set[int] = set()
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def callback(hwnd, _):
+        hwnd_value = int(hwnd)
+        if hwnd_value in seen_hwnds:
+            return True
+        if not _is_user_visible_window_windows(hwnd_value):
+            return True
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value == own_pid:
+            return True
+        title = _window_title_for_hwnd(hwnd_value)
+        if not title or title in _JUNK_WINDOW_TITLES:
+            return True
+        seen_hwnds.add(hwnd_value)
+        app_name = _process_exe_for_hwnd(hwnd_value) or "unknown"
+        results.append(
+            EmulatorWindow(
+                title=title,
+                app_name=app_name,
+                hwnd=hwnd_value,
+            )
+        )
+        return True
+
+    user32.EnumWindows(callback, 0)
+    results.sort(key=lambda window: (window.app_name.lower(), window.title.lower()))
+    return results
+
+
+def _list_all_windows_mac() -> List[EmulatorWindow]:
+    if not IS_MAC:
+        return []
+
+    script = """
+set output to ""
+tell application "System Events"
+    repeat with proc in (every application process whose background only is false)
+        set procName to name of proc
+        repeat with win in (every window of proc)
+            try
+                if visible of win then
+                    set winTitle to name of win
+                    if winTitle is not "" then
+                        set output to output & procName & "|||" & winTitle & linefeed
+                    end if
+                end if
+            end try
+        end repeat
+    end repeat
+end tell
+return output
+"""
+    raw, _ = _run_osascript(script, timeout=OSASCRIPT_UI_TIMEOUT)
+    if not raw:
+        return []
+
+    windows: List[EmulatorWindow] = []
+    for index, line in enumerate(raw.splitlines()):
+        if "|||" not in line:
+            continue
+        app_name, title = line.split("|||", 1)
+        app_name = app_name.strip()
+        title = title.strip()
+        if not title:
+            continue
+        windows.append(
+            EmulatorWindow(
+                title=title,
+                app_name=app_name or "unknown",
+                hwnd=index + 1,
+            )
+        )
+    windows.sort(key=lambda window: (window.app_name.lower(), window.title.lower()))
+    return windows
+
+
+def list_all_windows() -> List[dict]:
+    """Return user-visible titled windows as picker options."""
+    if IS_WIN:
+        windows = _list_all_windows_windows()
+    elif IS_MAC:
+        windows = _list_all_windows_mac()
+    else:
+        return []
+    return build_emulator_window_options(windows)
+
+
+def resolve_window_selection(
+    window_id: str,
+    *,
+    known_options: Optional[List[dict]] = None,
+    known_titles: Optional[List[str]] = None,
+) -> Optional[dict]:
+    normalized = window_id.strip()
+    if not normalized:
+        return None
+
+    option = _option_by_id(known_options or [], normalized)
+    if option:
+        return dict(option)
+
+    for title in known_titles or []:
+        if title == normalized:
+            return {"id": normalized, "title": title, "label": title, "app_name": ""}
+
+    if IS_WIN:
+        try:
+            hwnd = int(normalized)
+        except ValueError:
+            return None
+        title = _window_title_for_hwnd(hwnd)
+        if not title:
+            return None
+        app_name = _process_exe_for_hwnd(hwnd) or "unknown"
+        return {
+            "id": str(hwnd),
+            "title": title,
+            "label": f"[{app_name}]: {title}",
+            "app_name": app_name,
+        }
+
+    if IS_MAC and "::" in normalized:
+        parts = normalized.split("::", 2)
+        if len(parts) >= 2:
+            app_name = parts[0].strip()
+            title = parts[1].strip()
+            if title:
+                return {
+                    "id": normalized,
+                    "title": title,
+                    "label": f"[{app_name}]: {title}" if app_name else title,
+                    "app_name": app_name,
+                }
+
+    if IS_MAC and normalized:
+        for window in _list_all_windows_mac():
+            candidate_id = f"{window.app_name}::{window.title}::{window.hwnd}"
+            if candidate_id == normalized or window.title == normalized:
+                return {
+                    "id": candidate_id,
+                    "title": window.title,
+                    "label": f"[{window.app_name}]: {window.title}",
+                    "app_name": window.app_name,
+                }
+
+    return None
+
+
+def _highlight_window_mac(title: str, *, app_name: str = "") -> bool:
+    if not IS_MAC or not title:
+        return False
+
+    escaped_title = _escape_applescript(title)
+    if app_name:
+        escaped_app = _escape_applescript(app_name)
+        script = f"""
+tell application "System Events"
+    repeat with proc in (every application process whose background only is false)
+        if name of proc is "{escaped_app}" then
+            repeat with win in (every window of proc)
+                try
+                    if name of win is "{escaped_title}" then
+                        set frontmost of proc to true
+                        perform action "AXRaise" of win
+                        return "ok"
+                    end if
+                end try
+            end repeat
+        end if
+    end repeat
+end tell
+return ""
+"""
+    else:
+        script = f"""
+tell application "System Events"
+    repeat with proc in (every application process whose background only is false)
+        repeat with win in (every window of proc)
+            try
+                if name of win is "{escaped_title}" then
+                    set frontmost of proc to true
+                    perform action "AXRaise" of win
+                    return "ok"
+                end if
+            end try
+        end repeat
+    end repeat
+end tell
+return ""
+"""
+    raw, _ = _run_osascript(script, timeout=OSASCRIPT_UI_TIMEOUT)
+    return raw == "ok"
+
+
+def _highlight_vba_window_mac(title: str) -> bool:
+    if not IS_MAC or not title:
+        return False
+
+    escaped_title = _escape_applescript(title)
+    script = f"""
+tell application "System Events"
+    repeat with proc in (every application process whose background only is false)
+        set procName to name of proc
+        if procName contains "visualboyadvance" or procName contains "VisualBoyAdvance" or procName contains "vbam" then
+            repeat with win in (every window of proc)
+                try
+                    if name of win is "{escaped_title}" then
+                        set frontmost of proc to true
+                        perform action "AXRaise" of win
+                        return "ok"
+                    end if
+                end try
+            end repeat
+        end if
+    end repeat
+end tell
+return ""
+"""
+    raw, _ = _run_osascript(script, timeout=OSASCRIPT_UI_TIMEOUT)
+    return raw == "ok"
+
+
+def highlight_emulator_window(
+    window_id: str = "",
+    *,
+    title: str = "",
+    app_name: str = "",
+) -> bool:
+    """Bring a window to the front and flash it so the user can identify it."""
+    if IS_WIN:
+        if window_id:
+            try:
+                hwnd = int(window_id)
+                if _highlight_hwnd_windows(hwnd):
+                    return True
+            except ValueError:
+                pass
+        return _focus_vba_window_windows(title or None)
+
+    if not IS_MAC:
+        return False
+
+    if not title and window_id and "::" in window_id:
+        parts = window_id.split("::", 2)
+        if len(parts) >= 2:
+            if not app_name:
+                app_name = parts[0]
+            title = parts[1]
+
+    if not title:
+        return False
+
+    if _highlight_window_mac(title, app_name=app_name):
+        return True
+
+    return _highlight_vba_window_mac(title)
+
+
+def _bring_hwnd_to_front(hwnd: int) -> bool:
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+
+    if not user32.IsWindow(hwnd):
+        return False
+
+    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+
+    try:
+        user32.AllowSetForegroundWindow(0xFFFFFFFF)
+    except Exception:
+        pass
+
+    foreground = user32.GetForegroundWindow()
+    current_thread = kernel32.GetCurrentThreadId()
+    foreground_thread = user32.GetWindowThreadProcessId(foreground, None)
+    target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+
+    attached_fg = False
+    attached_current = False
+    if foreground_thread and target_thread and foreground_thread != target_thread:
+        attached_fg = bool(user32.AttachThreadInput(foreground_thread, target_thread, True))
+    if target_thread and target_thread != current_thread:
+        attached_current = bool(user32.AttachThreadInput(current_thread, target_thread, True))
+
+    user32.SetForegroundWindow(hwnd)
+    user32.BringWindowToTop(hwnd)
+
+    if attached_current:
+        user32.AttachThreadInput(current_thread, target_thread, False)
+    if attached_fg:
+        user32.AttachThreadInput(foreground_thread, target_thread, False)
+
+    return True
+
+
+def _highlight_hwnd_windows(hwnd: int) -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    if not _bring_hwnd_to_front(hwnd):
+        return False
+
+    user32 = ctypes.windll.user32
+
+    class FLASHWINFO(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.UINT),
+            ("hwnd", wintypes.HWND),
+            ("dwFlags", wintypes.DWORD),
+            ("uCount", wintypes.UINT),
+            ("dwTimeout", wintypes.DWORD),
+        ]
+
+    FLASHW_ALL = 0x3
+    flash = FLASHWINFO(
+        ctypes.sizeof(FLASHWINFO),
+        wintypes.HWND(hwnd),
+        FLASHW_ALL,
+        4,
+        0,
+    )
+    user32.FlashWindowEx(ctypes.byref(flash))
+    return True
+
+
+def _find_vba_window_title_windows() -> str:
+    windows = _list_vba_windows_windows()
+    return windows[0].title if windows else ""
+
+
+def _focus_vba_window_windows(
+    window_title: Optional[str] = None,
+    *,
+    hwnd: Optional[int] = None,
+) -> bool:
+    if not IS_WIN:
+        return False
+
+    if hwnd is not None:
+        return _highlight_hwnd_windows(hwnd)
+
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    matches: list[tuple[int, str]] = []
+    vba_pids = _vba_process_pids_windows()
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def callback(hwnd, _):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        pid = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if vba_pids and pid.value not in vba_pids:
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        title = buffer.value.strip()
+        if not title:
+            return True
+        if window_title and title != window_title:
+            return True
+        if not vba_pids:
+            lowered = title.lower()
+            if not any(keyword in lowered for keyword in VBA_WINDOW_TITLE_KEYWORDS):
+                return True
+        matches.append((int(hwnd), title))
+        return True
+
+    user32.EnumWindows(callback, 0)
+    if not matches:
+        return False
+
+    hwnd = matches[0][0]
+    return _highlight_hwnd_windows(hwnd)
+
+
+def _win_send_keys(sequence: str) -> bool:
+    escaped = sequence.replace("'", "''")
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        f"[System.Windows.Forms.SendKeys]::SendWait('{escaped}')"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        logger.debug("Windows SendKeys failed: %s", error)
+        return False
+    if result.returncode != 0:
+        logger.debug("Windows SendKeys error: %s", result.stderr.strip())
+        return False
+    return True
+
+
+def _detect_vba_on_windows(selected_window: str = "") -> EmulatorDetection:
+    config_path = _find_vbam_config()
+    exe_path = resolve_vba_icon_path()
+    windows = _list_vba_windows_windows()
+    options = build_emulator_window_options(windows)
+    titles = [window.title for window in windows]
+
+    if options:
+        selected_id, selected_title = auto_pick_vba_window_option(options, selected_window)
+        app_name = next((window.app_name for window in windows if window.title == selected_title), "visualboyadvance-m.exe")
+        return EmulatorDetection(
+            found=True,
+            emulator_id="visualboyadvance",
+            display_name="VisualBoy Advance-M",
+            app_name=app_name,
+            window_title=selected_title,
+            window_id=selected_id,
+            windows=titles,
+            window_options=options,
+            config_path=str(config_path) if config_path else "",
+            executable_path=exe_path,
+            message=format_vba_status_message(
+                len(options),
+                config_path=str(config_path) if config_path else "",
+            ),
+        )
+
+    if config_path or exe_path:
+        return EmulatorDetection(
+            found=False,
+            emulator_id="visualboyadvance",
+            display_name="VisualBoy Advance-M",
+            config_path=str(config_path) if config_path else "",
+            executable_path=exe_path,
+            message=(
+                "VisualBoy Advance-M is not running. Open the emulator, then refresh the window list."
+            ),
+        )
+
+    return EmulatorDetection(
+        found=False,
+        emulator_id="visualboyadvance",
+        display_name="VisualBoy Advance-M",
+        message=(
+            "VisualBoy Advance-M not found. Install VBA-M, then refresh the window list."
+        ),
     )
 
 
 def scan_for_emulator(
     controller_label: str = "GBA",
     emulator_id: str = "visualboyadvance",
+    selected_window: str = "",
 ) -> EmulatorDetection:
     if controller_label != "GBA":
         return EmulatorDetection(
@@ -294,7 +1210,10 @@ def scan_for_emulator(
         )
 
     if IS_MAC:
-        return _detect_vba_on_mac()
+        return _detect_vba_on_mac(selected_window=selected_window)
+
+    if IS_WIN:
+        return _detect_vba_on_windows(selected_window=selected_window)
 
     return EmulatorDetection(
         found=False,
@@ -331,7 +1250,7 @@ def _escape_applescript(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _find_running_vba_process() -> Optional[str]:
+def _find_running_vba_process_mac() -> Optional[str]:
     script = """
 set output to ""
 tell application "System Events"
@@ -347,6 +1266,14 @@ return output
 """
     raw, _ = _run_osascript(script)
     return raw or None
+
+
+def _find_running_vba_process() -> Optional[str]:
+    if IS_MAC:
+        return _find_running_vba_process_mac()
+    if IS_WIN:
+        return _find_running_vba_process_windows()
+    return None
 
 
 def _read_vba_recent_rom(config_path: Optional[str] = None) -> Optional[Path]:
@@ -412,6 +1339,20 @@ def launch_vba_emulator(
     detection: Optional[EmulatorDetection] = None,
     rom_path: Optional[Path] = None,
 ) -> bool:
+    if IS_WIN:
+        executable = _find_vba_executable()
+        if not executable:
+            return False
+        command = [str(executable)]
+        if rom_path:
+            command.append(str(rom_path))
+        try:
+            subprocess.Popen(command, close_fds=True)
+            return True
+        except OSError as error:
+            logger.warning("Could not launch VBA-M on Windows: %s", error)
+            return False
+
     if not IS_MAC:
         return False
     candidates = []
@@ -452,6 +1393,29 @@ def restart_vba_emulator(
     When preserve_game is True and a ROM was open, saves to slot 8 before quit,
     relaunches with that ROM, then loads slot 8. Returns (launched, game_restored).
     """
+    if IS_WIN:
+        process_name = _find_running_vba_process_windows()
+        rom_path: Optional[Path] = None
+        if preserve_game:
+            rom_path = _read_vba_recent_rom(config_path)
+
+        if process_name:
+            try:
+                subprocess.run(
+                    ["taskkill", "/IM", process_name, "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                return False, False
+            time.sleep(0.8)
+
+        if not launch_vba_emulator(detection, rom_path):
+            return False, False
+        return True, bool(rom_path)
+
     if not IS_MAC:
         return False, False
 
@@ -497,6 +1461,12 @@ def restart_vba_emulator(
 
 def close_vba_joypad_configuration(process_name: Optional[str] = None) -> bool:
     """Dismiss the Joypad Configuration dialog without saving stale UI state."""
+    if IS_WIN:
+        if not _focus_vba_window_windows():
+            return False
+        time.sleep(0.2)
+        return _win_send_keys("{ESC}")
+
     if not IS_MAC:
         return False
 
@@ -534,6 +1504,31 @@ end tell
 
 def open_vba_joypad_configuration(detection: Optional[EmulatorDetection] = None) -> bool:
     """Open VBA-M Options > Input > Configure (Joypad Configuration dialog)."""
+    if IS_WIN:
+        process_name = _find_running_vba_process_windows()
+        if not process_name:
+            if not launch_vba_emulator(detection):
+                return False
+            time.sleep(2.0)
+            process_name = _find_running_vba_process_windows()
+        if not process_name:
+            return False
+
+        close_vba_joypad_configuration(process_name)
+        time.sleep(0.25)
+        if not _focus_vba_window_windows():
+            return False
+        time.sleep(0.5)
+        if not _win_send_keys("%o"):
+            return False
+        time.sleep(0.35)
+        if not _win_send_keys("i"):
+            return False
+        time.sleep(0.35)
+        if not _win_send_keys("c"):
+            return False
+        return True
+
     if not IS_MAC:
         return False
 
@@ -571,6 +1566,16 @@ end tell
 
 
 def focus_emulator(detection: EmulatorDetection) -> bool:
+    if not detection.found and not detection.app_name:
+        return False
+    if IS_WIN:
+        if detection.window_id:
+            try:
+                if _highlight_hwnd_windows(int(detection.window_id)):
+                    return True
+            except ValueError:
+                pass
+        return _focus_vba_window_windows(detection.window_title or None)
     if not detection.found or not detection.app_name:
         return False
     if not IS_MAC:
@@ -782,19 +1787,20 @@ def apply_vba_joypad_link(
     cleared or invalid joypad bindings are reloaded from vbam.ini. If a ROM was
     open, its save state is preserved via VBA-M slot 8.
     """
-    seen: set[Path] = set()
-    for path in _all_vbam_configs():
-        resolved = path.resolve()
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        write_vba_gba_keyboard_map(mapping, str(path))
-
-    if config_path:
-        path = Path(config_path)
-        resolved = path.resolve()
-        if resolved not in seen and path.is_file():
+    if not IS_WIN:
+        seen: set[Path] = set()
+        for path in _all_vbam_configs():
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
             write_vba_gba_keyboard_map(mapping, str(path))
+
+        if config_path:
+            path = Path(config_path)
+            resolved = path.resolve()
+            if resolved not in seen and path.is_file():
+                write_vba_gba_keyboard_map(mapping, str(path))
 
     was_already_running = _find_running_vba_process() is not None
     restarted_emulator = False
@@ -820,9 +1826,12 @@ def apply_vba_joypad_link(
             if detection and detection.found:
                 focus_emulator(detection)
             elif process_name:
-                _run_osascript(
-                    f'tell application "{_escape_applescript(process_name)}" to activate'
-                )
+                if IS_WIN:
+                    _focus_vba_window_windows()
+                else:
+                    _run_osascript(
+                        f'tell application "{_escape_applescript(process_name)}" to activate'
+                    )
             time.sleep(0.4)
     else:
         if not launch_vba_emulator(detection):
@@ -897,6 +1906,17 @@ def read_vba_gba_keyboard_map(config_path: Optional[str] = None) -> tuple[Dict[s
 
 def sync_vba_gba_keyboard(config_path: Optional[str] = None) -> tuple[Dict[str, str], str, bool]:
     """Read VBA joypad bindings, writing keyboard defaults when missing or invalid."""
+    if IS_WIN:
+        path = Path(config_path) if config_path else _find_vbam_config()
+        if path and path.is_file():
+            mapping, source = read_vba_gba_keyboard_map(str(path))
+            return mapping, source, False
+        return (
+            dict(VBA_DEFAULT_KEYBOARD),
+            "Configure the ChatPlays virtual controller in VBA-M joypad settings",
+            False,
+        )
+
     path = Path(config_path) if config_path else _find_vbam_config()
     if not path or not path.is_file():
         updated = write_vba_gba_keyboard_map()
@@ -927,7 +1947,17 @@ def sync_vba_gba_keyboard(config_path: Optional[str] = None) -> tuple[Dict[str, 
     return mapping, source, False
 
 
-def build_auto_link_summary(mapping: Dict[str, str], source: str, *, wrote_config: bool = False) -> str:
+def build_auto_link_summary(
+    mapping: Dict[str, str],
+    source: str,
+    *,
+    wrote_config: bool = False,
+    virtual_controller: bool = False,
+) -> str:
+    if virtual_controller:
+        if wrote_config:
+            return "Updated VisualBoy Advance-M for the ChatPlays virtual controller."
+        return "Linking the ChatPlays virtual controller to VisualBoy Advance-M."
     pairs = ", ".join(f"{name}={key}" for name, key in sorted(mapping.items()))
     prefix = "Updated and linked using" if wrote_config else "Linked using"
     return f"{prefix} {source}: {pairs}"

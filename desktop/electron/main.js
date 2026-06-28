@@ -21,18 +21,36 @@ function projectRoot() {
 
 function pythonExecutable() {
   const root = projectRoot();
-  const venvPython = path.join(root, "virt", "bin", "python");
-  if (fs.existsSync(venvPython)) return venvPython;
+  const venvCandidates = [
+    path.join(root, "virt", "Scripts", "python.exe"),
+    path.join(root, "virt", "bin", "python"),
+  ];
+  for (const candidate of venvCandidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA || "";
+    const versionedCandidates = ["Python312", "Python311", "Python310"].map((folder) =>
+      path.join(localAppData, "Programs", "Python", folder, "python.exe")
+    );
+    for (const candidate of versionedCandidates) {
+      if (candidate && fs.existsSync(candidate)) return candidate;
+    }
+  }
+
   return process.platform === "win32" ? "python" : "python3";
 }
 
 function startPythonBackend() {
   const root = projectRoot();
   const script = path.join(root, "api_server.py");
+  const env = { ...process.env, PYTHONUNBUFFERED: "1" };
+  delete env.PYTHONPATH;
   pythonProcess = spawn(pythonExecutable(), [script], {
     cwd: root,
     stdio: "inherit",
-    env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    env,
   });
   pythonProcess.on("exit", (code) => {
     console.log(`Python backend exited with code ${code}`);
@@ -80,10 +98,10 @@ function createSetupWindow() {
   }
   setupWindow = new BrowserWindow({
     width: 1060,
-    height: 800,
+    height: 960,
     minWidth: 900,
-    minHeight: 740,
-    title: "Test/Setup ChatPlays Program",
+    minHeight: 820,
+    title: "Setup/Test ChatPlays Program",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -139,6 +157,16 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("get-api-base", () => `http://127.0.0.1:${API_PORT}`);
+
+  ipcMain.handle("get-file-icon", async (_event, filePath) => {
+    if (!filePath || typeof filePath !== "string") return null;
+    try {
+      const icon = await app.getFileIcon(filePath, { size: "normal" });
+      return icon.toDataURL();
+    } catch {
+      return null;
+    }
+  });
 
   startPythonBackend();
   createMainWindow();

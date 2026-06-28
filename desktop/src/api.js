@@ -36,6 +36,18 @@ export const api = {
   cancelManualSetup: () =>
     apiFetch("/api/setup/manual-setup/cancel", { method: "POST" }),
   scanEmulator: () => apiFetch("/api/setup/scan-emulator", { method: "POST" }),
+  scanMainEmulator: () => apiFetch("/api/main/scan-emulator", { method: "POST" }),
+  listWindows: () => apiFetch("/api/windows"),
+  selectSetupEmulatorWindow: (window) =>
+    apiFetch("/api/setup/select-emulator-window", {
+      method: "POST",
+      body: JSON.stringify({ window }),
+    }),
+  selectMainEmulatorWindow: (window) =>
+    apiFetch("/api/main/select-emulator-window", {
+      method: "POST",
+      body: JSON.stringify({ window }),
+    }),
   autoLinkEmulator: () => apiFetch("/api/setup/auto-link", { method: "POST" }),
   toggleDemocracyTimer: () =>
     apiFetch("/api/setup/toggle-democracy-timer", { method: "POST" }),
@@ -50,6 +62,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ input_name, key }),
     }),
+  resetVirtualBindings: () =>
+    apiFetch("/api/setup/reset-virtual-bindings", { method: "POST" }),
   toggleDisabledInput: (input_name) =>
     apiFetch("/api/setup/toggle-disabled-input", {
       method: "POST",

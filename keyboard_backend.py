@@ -7,9 +7,12 @@ import subprocess
 import time
 from pathlib import Path
 
-from pynput.keyboard import Controller, Key, KeyCode
-
 IS_MAC = platform.system() == "Darwin"
+
+if IS_MAC:
+    from pynput.keyboard import Controller, Key, KeyCode
+else:
+    Controller = Key = KeyCode = None  # Windows/Linux use vgamepad instead
 
 # When set, keystrokes are targeted at this process by name instead of the
 # frontmost app, so ChatPlays doesn't need focus and its own window is ignored.
@@ -85,35 +88,39 @@ DEFAULT_KEYBOARD_MAPS = {
     },
 }
 
-SPECIAL_KEYS = {
-    "enter": Key.enter,
-    "return": Key.enter,
-    "backspace": Key.backspace,
-    "space": Key.space,
-    "tab": Key.tab,
-    "escape": Key.esc,
-    "up": Key.up,
-    "down": Key.down,
-    "left": Key.left,
-    "right": Key.right,
-}
-
 ANALOG_INPUTS = {"lstick", "rstick", "left_joystick_float", "right_joystick_float",
                  "left_trigger_float", "right_trigger_float"}
 
 CONFIG_PATH = Path(__file__).resolve().parent / "KeyboardMappings.json"
 
-MAC_KEY_CODES = {
-    Key.up: 126,
-    Key.down: 125,
-    Key.left: 123,
-    Key.right: 124,
-    Key.enter: 36,
-    Key.backspace: 51,
-    Key.space: 49,
-    Key.tab: 48,
-    Key.esc: 53,
-}
+if IS_MAC:
+    SPECIAL_KEYS = {
+        "enter": Key.enter,
+        "return": Key.enter,
+        "backspace": Key.backspace,
+        "space": Key.space,
+        "tab": Key.tab,
+        "escape": Key.esc,
+        "up": Key.up,
+        "down": Key.down,
+        "left": Key.left,
+        "right": Key.right,
+    }
+
+    MAC_KEY_CODES = {
+        Key.up: 126,
+        Key.down: 125,
+        Key.left: 123,
+        Key.right: 124,
+        Key.enter: 36,
+        Key.backspace: 51,
+        Key.space: 49,
+        Key.tab: 48,
+        Key.esc: 53,
+    }
+else:
+    SPECIAL_KEYS = {}
+    MAC_KEY_CODES = {}
 
 
 def _resolve_key(key_name):

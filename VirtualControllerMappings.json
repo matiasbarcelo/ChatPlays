@@ -1,0 +1,5 @@
+{
+    "GBAController": {
+        "up": "XUSB_GAMEPAD_DPAD_UP"
+    }
+}

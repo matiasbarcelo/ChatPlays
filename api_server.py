@@ -3,8 +3,9 @@
 import asyncio
 import json
 import logging
-from dataclasses import asdict, dataclass
-from typing import Optional, Set
+import time
+from dataclasses import asdict, dataclass, field
+from typing import List, Optional, Set
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -12,6 +13,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from setup_test_service import SetupTestService, SetupTestState, VoteSlot
+
+from emulator_support import (
+    scan_for_emulator,
+    highlight_emulator_window,
+    list_all_windows,
+    resolve_window_selection,
+    ensure_vba_emulator_running,
+    auto_pick_vba_window_option,
+    format_vba_status_message,
+    _vba_windows_present,
+)
+from keyboard_backend import set_target_process
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,6 +44,14 @@ class MainWindowState:
     oauth_key: str = ""
     streaming_platform: str = "twitch"
     emulator: str = "visualboyadvance"
+    emulator_detected: bool = False
+    emulator_name: str = ""
+    emulator_window: str = ""
+    emulator_windows: List[str] = field(default_factory=list)
+    emulator_window_options: List[dict] = field(default_factory=list)
+    emulator_app_name: str = ""
+    emulator_message: str = ""
+    emulator_executable_path: str = ""
     government: str = "anarchy"
     program_status: bool = False
     democracy_time_limit: int = 10
@@ -77,6 +98,10 @@ class MainSettingsBody(BaseModel):
     democracy_time_limit: Optional[int] = None
 
 
+class SelectEmulatorWindowBody(BaseModel):
+    window: str
+
+
 class ConnectionManager:
     def __init__(self):
         self.active: Set[WebSocket] = set()
@@ -118,6 +143,94 @@ def _schedule_broadcast(setup_state: Optional[SetupTestState] = None):
 
 service = SetupTestService(on_change=_schedule_broadcast)
 
+
+def _apply_main_emulator_detection(
+    detection,
+    *,
+    previous_window: str = "",
+    prefer_newest_vba: bool = False,
+):
+    options = list(detection.window_options)
+    titles = list(detection.windows)
+    if not titles and options:
+        titles = [option["title"] for option in options]
+    if detection.found and detection.window_title and detection.window_title not in titles:
+        titles = [detection.window_title, *titles]
+
+    keep_previous = False
+    if previous_window:
+        for option in options:
+            if option["id"] == previous_window or option["title"] == previous_window:
+                keep_previous = True
+                break
+        if not keep_previous and resolve_window_selection(previous_window):
+            keep_previous = True
+
+    if options and (len(options) == 1 or prefer_newest_vba or not keep_previous):
+        selected, _ = auto_pick_vba_window_option(
+            options,
+            previous_window if keep_previous else "",
+            prefer_newest=prefer_newest_vba,
+        )
+    else:
+        selected = detection.window_id or detection.window_title
+        if previous_window and keep_previous:
+            for option in options:
+                if option["id"] == previous_window or option["title"] == previous_window:
+                    selected = option["id"]
+                    break
+            else:
+                custom = resolve_window_selection(previous_window)
+                if custom:
+                    selected = custom["id"]
+                    main_state.emulator_app_name = custom.get("app_name") or detection.app_name
+                    main_state.emulator_detected = True
+                    main_state.emulator_message = f"Targeting window “{custom['title']}”."
+                elif previous_window in titles:
+                    selected = previous_window
+
+    main_state.emulator_window_options = options
+    main_state.emulator_windows = titles
+    main_state.emulator_detected = bool(options or titles) or bool(
+        previous_window and resolve_window_selection(previous_window)
+    )
+    main_state.emulator_name = detection.display_name if (options or titles) else ""
+    main_state.emulator_window = selected if (selected or options or titles) else ""
+    if not (keep_previous and resolve_window_selection(previous_window)):
+        main_state.emulator_app_name = detection.app_name if (options or titles) else ""
+        if options and len(options) == 1:
+            main_state.emulator_message = format_vba_status_message(
+                len(options),
+                config_path=detection.config_path or "",
+            )
+        else:
+            main_state.emulator_message = detection.message
+    main_state.emulator_executable_path = detection.executable_path or ""
+    set_target_process(main_state.emulator_app_name if main_state.emulator_window else "")
+
+
+def _sync_emulators_for_power_state(*, live: bool):
+    launched = False
+    if live and not _vba_windows_present():
+        launched = ensure_vba_emulator_running()
+        if launched:
+            time.sleep(2.0)
+
+    service.on_program_power_changed(live=live, prefer_newest_vba=live and launched)
+
+    previous = main_state.emulator_window
+    detection = scan_for_emulator(
+        "GBA",
+        emulator_id=main_state.emulator,
+        selected_window=previous,
+    )
+    _apply_main_emulator_detection(
+        detection,
+        previous_window=previous,
+        prefer_newest_vba=live and launched,
+    )
+
+
 app = FastAPI(title="ChatPlays API")
 app.add_middleware(
     CORSMiddleware,
@@ -131,6 +244,7 @@ app.add_middleware(
 async def on_startup():
     global loop
     loop = asyncio.get_running_loop()
+    _sync_emulators_for_power_state(live=main_state.program_status)
     _schedule_broadcast()
 
 
@@ -165,6 +279,12 @@ def update_key_binding(body: KeyBindingBody):
     return {"ok": True}
 
 
+@app.post("/api/setup/reset-virtual-bindings")
+def reset_virtual_bindings():
+    service.reset_virtual_bindings()
+    return {"ok": True}
+
+
 @app.post("/api/setup/toggle-disabled-input")
 def toggle_disabled_input(body: ToggleDisabledBody):
     service.toggle_disabled_input(body.input_name)
@@ -174,6 +294,53 @@ def toggle_disabled_input(body: ToggleDisabledBody):
 @app.post("/api/setup/scan-emulator")
 def scan_emulator():
     service.scan_emulator()
+    return {"ok": True}
+
+
+@app.post("/api/main/scan-emulator")
+def scan_main_emulator():
+    previous = main_state.emulator_window
+    detection = scan_for_emulator(
+        "GBA",
+        emulator_id=main_state.emulator,
+        selected_window=previous,
+    )
+    _apply_main_emulator_detection(detection, previous_window=previous)
+    _schedule_broadcast()
+    return {"ok": True}
+
+
+@app.get("/api/windows")
+def list_windows():
+    return {"windows": list_all_windows()}
+
+
+@app.post("/api/main/select-emulator-window")
+def select_main_emulator_window(body: SelectEmulatorWindowBody):
+    normalized = body.window.strip()
+    selection = resolve_window_selection(
+        normalized,
+        known_options=main_state.emulator_window_options,
+        known_titles=main_state.emulator_windows,
+    )
+    if selection is None:
+        return {"ok": False}
+    title = selection["title"]
+    window_id = selection["id"]
+    app_name = selection.get("app_name") or main_state.emulator_app_name or "visualboyadvance-m.exe"
+    main_state.emulator_window = window_id
+    main_state.emulator_detected = True
+    main_state.emulator_app_name = app_name
+    main_state.emulator_message = f"Targeting window “{title}”."
+    set_target_process(app_name)
+    highlight_emulator_window(window_id, title=title, app_name=app_name)
+    _schedule_broadcast()
+    return {"ok": True}
+
+
+@app.post("/api/setup/select-emulator-window")
+def select_setup_emulator_window(body: SelectEmulatorWindowBody):
+    service.select_emulator_window(body.window)
     return {"ok": True}
 
 
@@ -247,6 +414,7 @@ def toggle_setup_mode():
 def toggle_power():
     main_state.program_status = not main_state.program_status
     service.program.setStatus()
+    _sync_emulators_for_power_state(live=main_state.program_status)
     _schedule_broadcast()
     return {"ok": True, "program_status": main_state.program_status}
 
