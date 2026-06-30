@@ -25,6 +25,8 @@ from emulator_support import (
     _vba_windows_present,
 )
 from keyboard_backend import set_target_process
+from main_settings_store import load_main_settings_cache, save_main_settings_cache
+from twitch_user_lookup import lookup_streaming_user
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,6 +43,8 @@ def state_to_dict(state: SetupTestState) -> dict:
 @dataclass
 class MainWindowState:
     twitch_username: str = ""
+    twitch_username_verified: bool = False
+    twitch_display_name: str = ""
     oauth_key: str = ""
     streaming_platform: str = "twitch"
     emulator: str = "visualboyadvance"
@@ -59,6 +63,10 @@ class MainWindowState:
 
 class SubmitInputBody(BaseModel):
     text: str
+
+
+class FakeChatRollBody(BaseModel):
+    count: Optional[int] = 0
 
 
 class ControllerButtonBody(BaseModel):
@@ -82,15 +90,29 @@ class SettingsBody(BaseModel):
     press_time: Optional[float] = None
     hold_time: Optional[float] = None
     default_time_length: Optional[str] = None
+    timing_tap_enabled: Optional[bool] = None
+    timing_press_enabled: Optional[bool] = None
+    timing_hold_enabled: Optional[bool] = None
     countdown_seconds: Optional[int] = None
+    allow_custom_input_duration: Optional[bool] = None
+    max_input_duration: Optional[int] = None
+    allow_timing_prefixes: Optional[bool] = None
+    allow_input_repeat: Optional[bool] = None
+    allow_input_sequences: Optional[bool] = None
+    max_input_sequence_length: Optional[int] = None
     democracy_minutes: Optional[int] = None
     democracy_seconds: Optional[int] = None
     setup_link_mode: Optional[str] = None
     setup_emulator: Optional[str] = None
+    chat_decides_default_gov: Optional[str] = None
+    chat_decides_switch_threshold: Optional[int] = None
+    chat_decides_vote_ttl_minutes: Optional[int] = None
 
 
 class MainSettingsBody(BaseModel):
     twitch_username: Optional[str] = None
+    twitch_username_verified: Optional[bool] = None
+    twitch_display_name: Optional[str] = None
     oauth_key: Optional[str] = None
     streaming_platform: Optional[str] = None
     emulator: Optional[str] = None
@@ -142,6 +164,80 @@ def _schedule_broadcast(setup_state: Optional[SetupTestState] = None):
 
 
 service = SetupTestService(on_change=_schedule_broadcast)
+
+
+def _platform_display_name(result: dict, fallback: str = "") -> str:
+    if not result.get("found"):
+        return ""
+    return (result.get("display_name") or result.get("login") or fallback).strip()
+
+
+def _apply_twitch_username(
+    username: str,
+    verified: Optional[bool] = None,
+    display_name: Optional[str] = None,
+):
+    username = username.strip()
+    main_state.twitch_username = username
+    service.program.setUser(username)
+    if not username:
+        main_state.twitch_username_verified = False
+        main_state.twitch_display_name = ""
+        return
+
+    if verified is None:
+        result = lookup_streaming_user(main_state.streaming_platform, username)
+        main_state.twitch_username_verified = bool(result.get("found"))
+        main_state.twitch_display_name = _platform_display_name(result, username)
+        return
+
+    main_state.twitch_username_verified = verified
+    if not verified:
+        main_state.twitch_display_name = ""
+        return
+
+    if display_name is not None and display_name.strip():
+        main_state.twitch_display_name = display_name.strip()
+        return
+
+    result = lookup_streaming_user(main_state.streaming_platform, username)
+    main_state.twitch_display_name = _platform_display_name(result, username)
+
+
+def _persist_main_settings_cache():
+    save_main_settings_cache(
+        {
+            "twitch_username": main_state.twitch_username,
+            "twitch_username_verified": main_state.twitch_username_verified,
+            "twitch_display_name": main_state.twitch_display_name,
+            "streaming_platform": main_state.streaming_platform,
+        }
+    )
+
+
+def _load_cached_main_settings():
+    cached = load_main_settings_cache()
+    if not cached:
+        return
+
+    platform = str(cached.get("streaming_platform", "") or "twitch").strip() or "twitch"
+    main_state.streaming_platform = platform
+
+    username = str(cached.get("twitch_username", "")).strip()
+    if not username:
+        return
+
+    verified = bool(cached.get("twitch_username_verified"))
+    display_name = str(cached.get("twitch_display_name", "")).strip()
+    if verified and display_name:
+        _apply_twitch_username(username, True, display_name)
+    elif "twitch_username_verified" in cached:
+        _apply_twitch_username(username, verified, display_name or None)
+    else:
+        _apply_twitch_username(username)
+
+
+_load_cached_main_settings()
 
 
 def _apply_main_emulator_detection(
@@ -267,6 +363,20 @@ def submit_input(body: SubmitInputBody):
     return {"ok": True}
 
 
+@app.post("/api/setup/fake-chat-roll")
+def start_fake_chat_roll(body: FakeChatRollBody):
+    service.start_fake_chat_roll(
+        count=body.count if body.count is not None else 0,
+    )
+    return {"ok": True}
+
+
+@app.post("/api/setup/fake-chat-roll/stop")
+def stop_fake_chat_roll():
+    service.stop_fake_chat_roll()
+    return {"ok": True}
+
+
 @app.post("/api/setup/controller-button")
 def controller_button(body: ControllerButtonBody):
     service.press_controller_button(body.button)
@@ -382,16 +492,68 @@ def update_setup_settings(body: SettingsBody):
         service.set_government(body.government)
     if body.controller is not None:
         service.set_controller(body.controller)
-    if any(v is not None for v in (body.tap_time, body.press_time, body.hold_time, body.default_time_length)):
+    if any(
+        v is not None
+        for v in (
+            body.tap_time,
+            body.press_time,
+            body.hold_time,
+            body.default_time_length,
+            body.timing_tap_enabled,
+            body.timing_press_enabled,
+            body.timing_hold_enabled,
+        )
+    ):
         state = service.get_state()
         service.set_time_lengths(
             body.tap_time if body.tap_time is not None else state.tap_time,
             body.press_time if body.press_time is not None else state.press_time,
             body.hold_time if body.hold_time is not None else state.hold_time,
             body.default_time_length if body.default_time_length is not None else state.default_time_length,
+            body.timing_tap_enabled
+            if body.timing_tap_enabled is not None
+            else state.timing_tap_enabled,
+            body.timing_press_enabled
+            if body.timing_press_enabled is not None
+            else state.timing_press_enabled,
+            body.timing_hold_enabled
+            if body.timing_hold_enabled is not None
+            else state.timing_hold_enabled,
         )
     if body.countdown_seconds is not None:
         service.set_countdown(body.countdown_seconds)
+    if any(
+        v is not None
+        for v in (
+            body.allow_custom_input_duration,
+            body.max_input_duration,
+            body.allow_timing_prefixes,
+            body.allow_input_repeat,
+            body.allow_input_sequences,
+            body.max_input_sequence_length,
+        )
+    ):
+        state = service.get_state()
+        service.set_chat_input_policy(
+            body.allow_timing_prefixes
+            if body.allow_timing_prefixes is not None
+            else state.allow_timing_prefixes,
+            body.allow_input_repeat
+            if body.allow_input_repeat is not None
+            else state.allow_input_repeat,
+            body.allow_custom_input_duration
+            if body.allow_custom_input_duration is not None
+            else state.allow_custom_input_duration,
+            body.max_input_duration
+            if body.max_input_duration is not None
+            else state.max_input_duration,
+            body.allow_input_sequences
+            if body.allow_input_sequences is not None
+            else state.allow_input_sequences,
+            body.max_input_sequence_length
+            if body.max_input_sequence_length is not None
+            else state.max_input_sequence_length,
+        )
     if body.democracy_minutes is not None or body.democracy_seconds is not None:
         state = service.get_state()
         minutes = body.democracy_minutes if body.democracy_minutes is not None else state.democracy_minutes
@@ -401,6 +563,27 @@ def update_setup_settings(body: SettingsBody):
         service.set_setup_link_mode(body.setup_link_mode)
     if body.setup_emulator is not None:
         service.set_setup_emulator(body.setup_emulator)
+    if any(
+        v is not None
+        for v in (
+            body.chat_decides_default_gov,
+            body.chat_decides_switch_threshold,
+            body.chat_decides_vote_ttl_minutes,
+        )
+    ):
+        state = service.get_state()
+        service.set_chat_decides_settings(
+            body.chat_decides_default_gov
+            if body.chat_decides_default_gov is not None
+            else state.chat_decides_default_gov,
+            body.chat_decides_switch_threshold
+            if body.chat_decides_switch_threshold is not None
+            else state.chat_decides_switch_threshold,
+            body.chat_decides_vote_ttl_minutes
+            if body.chat_decides_vote_ttl_minutes is not None
+            else state.chat_decides_vote_ttl_minutes,
+            apply_default=body.chat_decides_default_gov is not None,
+        )
     return {"ok": True}
 
 
@@ -419,15 +602,41 @@ def toggle_power():
     return {"ok": True, "program_status": main_state.program_status}
 
 
+@app.get("/api/main/verify-username")
+def verify_username(username: str, platform: str = "twitch"):
+    return lookup_streaming_user(platform, username)
+
+
 @app.post("/api/main/settings")
 def update_main_settings(body: MainSettingsBody):
     if body.twitch_username is not None:
-        main_state.twitch_username = body.twitch_username
-        service.program.setUser(body.twitch_username)
+        _apply_twitch_username(
+            body.twitch_username,
+            body.twitch_username_verified,
+            body.twitch_display_name,
+        )
+    elif body.twitch_username_verified is not None:
+        main_state.twitch_username_verified = (
+            body.twitch_username_verified and bool(main_state.twitch_username.strip())
+        )
+        if not main_state.twitch_username_verified:
+            main_state.twitch_display_name = ""
+        elif body.twitch_display_name is not None:
+            main_state.twitch_display_name = body.twitch_display_name.strip()
+    elif body.twitch_display_name is not None and main_state.twitch_username_verified:
+        main_state.twitch_display_name = body.twitch_display_name.strip()
     if body.oauth_key is not None:
         main_state.oauth_key = body.oauth_key
     if body.streaming_platform is not None:
         main_state.streaming_platform = body.streaming_platform
+        if main_state.twitch_username.strip():
+            result = lookup_streaming_user(
+                main_state.streaming_platform, main_state.twitch_username
+            )
+            main_state.twitch_username_verified = bool(result.get("found"))
+            main_state.twitch_display_name = _platform_display_name(
+                result, main_state.twitch_username
+            )
     if body.emulator is not None:
         main_state.emulator = body.emulator
     if body.government is not None:
@@ -437,6 +646,16 @@ def update_main_settings(body: MainSettingsBody):
     if body.democracy_time_limit is not None:
         main_state.democracy_time_limit = body.democracy_time_limit
         service.program.setDemTime(body.democracy_time_limit)
+    if any(
+        field is not None
+        for field in (
+            body.twitch_username,
+            body.twitch_username_verified,
+            body.twitch_display_name,
+            body.streaming_platform,
+        )
+    ):
+        _persist_main_settings_cache()
     _schedule_broadcast()
     return {"ok": True}
 

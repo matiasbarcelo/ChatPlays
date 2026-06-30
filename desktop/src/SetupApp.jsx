@@ -4,7 +4,7 @@ import { useChatPlaysState } from "./hooks/useChatPlaysState";
 import { ControllerPanel } from "./components/ControllerPanel";
 import { InfoIcon } from "./components/InfoIcon";
 import { VirtualInputCombobox } from "./components/VirtualInputCombobox";
-import { AnarchyPanel, DemocracyPanel } from "./components/GovPanels";
+import { AnarchyPanel, DemocracyPanel, ChatDecidesPanel } from "./components/GovPanels";
 import { EmulatorDetectField } from "./components/EmulatorDetectField";
 import { closeSetupWindow } from "./openSetupWindow";
 
@@ -152,17 +152,152 @@ export function KeyBindTable({
 
 const IS_WIN = /win/i.test(navigator.platform);
 const COMMANDS_LIST_URL = "http://127.0.0.1:8765/commands";
+const OVERLAY_URL = "http://127.0.0.1:8765/overlay";
 
-function getAvailableChatInputs(buttonMap, disabledInputs = []) {
+function getAvailableChatInputs(buttonMap, disabledInputs = [], government = "anarchy") {
   const disabled = new Set(disabledInputs);
-  return [...new Set(Object.values(buttonMap || {}))]
+  const inputs = [...new Set(Object.values(buttonMap || {}))]
     .filter((name) => name && !disabled.has(name))
     .sort((a, b) => a.localeCompare(b));
+  inputs.push("wait");
+  if (government === "chat_decides") {
+    inputs.push("anarchy", "democracy");
+  }
+  return inputs;
 }
 
-function formatInputsForClipboard(inputs) {
+function getEnabledTimingModes(setup) {
+  return ["tap", "press", "hold"].filter((mode) => setup?.[`timing_${mode}_enabled`] !== false);
+}
+
+function buildTimingSettings(setup, overrides = {}) {
+  const timing_tap_enabled =
+    overrides.timing_tap_enabled ?? setup.timing_tap_enabled ?? true;
+  const timing_press_enabled =
+    overrides.timing_press_enabled ?? setup.timing_press_enabled ?? true;
+  const timing_hold_enabled =
+    overrides.timing_hold_enabled ?? setup.timing_hold_enabled ?? true;
+  const enabled = {
+    tap: timing_tap_enabled,
+    press: timing_press_enabled,
+    hold: timing_hold_enabled,
+  };
+  let default_time_length =
+    overrides.default_time_length ?? setup.default_time_length ?? "press";
+  if (!enabled[default_time_length]) {
+    default_time_length = ["tap", "press", "hold"].find((mode) => enabled[mode]) ?? "press";
+  }
+  return {
+    tap_time: overrides.tap_time ?? setup.tap_time,
+    press_time: overrides.press_time ?? setup.press_time,
+    hold_time: overrides.hold_time ?? setup.hold_time,
+    default_time_length,
+    timing_tap_enabled,
+    timing_press_enabled,
+    timing_hold_enabled,
+  };
+}
+
+function buildChatInputPolicy(setup, overrides = {}) {
+  return {
+    allow_timing_prefixes:
+      overrides.allow_timing_prefixes ?? setup.allow_timing_prefixes ?? true,
+    allow_input_repeat: overrides.allow_input_repeat ?? setup.allow_input_repeat ?? true,
+    allow_custom_input_duration:
+      overrides.allow_custom_input_duration ?? setup.allow_custom_input_duration ?? false,
+    max_input_duration: overrides.max_input_duration ?? setup.max_input_duration ?? 15,
+    allow_input_sequences:
+      overrides.allow_input_sequences ?? setup.allow_input_sequences ?? false,
+    max_input_sequence_length:
+      overrides.max_input_sequence_length ?? setup.max_input_sequence_length ?? 3,
+  };
+}
+
+function formatInputsForClipboard(inputs, settings = {}) {
+  const {
+    defaultTimeLength = "press",
+    tapTime = 0.3,
+    pressTime = 0.5,
+    holdTime = 1,
+    controller = "GBA",
+    allowCustomInputDuration = false,
+    maxInputDuration = 15,
+    allowTimingPrefixes = true,
+    allowInputRepeat = true,
+    allowInputSequences = false,
+    maxInputSequenceLength = 3,
+    enabledTimingModes = ["tap", "press", "hold"],
+    government = "anarchy",
+    chatDecidesSwitchThreshold = 75,
+    chatDecidesVoteTtlMinutes = 5,
+  } = settings;
+
+  const timingLabels = {
+    tap: `tap ${tapTime}s`,
+    press: `press ${pressTime}s`,
+    hold: `hold ${holdTime}s`,
+  };
+  const activeTimingModes = enabledTimingModes.filter((mode) => timingLabels[mode]);
+  const defaultLabel = timingLabels[defaultTimeLength] ?? defaultTimeLength;
+
   const list = inputs.join(", ");
-  return `Available chat inputs: ${list}\n!commands ${list}`;
+  const lines = [
+    "ChatPlays — Available Chat Inputs",
+    "",
+    `Controller: ${controller}`,
+    `Inputs: ${list}`,
+    "",
+    "How to play:",
+    "• Send a button name in chat (example: a or start)",
+    "• Capitalization doesn't matter (example: START, Start, and start are the same)",
+    "• Use wait to pause without pressing a button (example: wait or (2)wait)",
+  ];
+
+  if (allowInputSequences) {
+    lines.push(
+      `• Chain multiple inputs with commas (example: a,b,start, max ${maxInputSequenceLength} per sequence)`
+    );
+  }
+
+  if (allowTimingPrefixes && activeTimingModes.length > 1) {
+    const shortPrefixes = activeTimingModes.map((mode) => mode[0]).join(", ");
+    lines.push(
+      `• Prefix ${activeTimingModes.join(", ")} (or ${shortPrefixes}) before a button`
+    );
+  }
+
+  if (allowCustomInputDuration) {
+    lines.push(
+      `• Custom duration in seconds before the button (example: (1.6)a, max ${maxInputDuration}s)`
+    );
+  }
+
+  if (allowTimingPrefixes || !allowCustomInputDuration) {
+    const timingParts = activeTimingModes.map((mode) => timingLabels[mode]).join(", ");
+    lines.push(
+      `• Default timing: ${defaultLabel}${timingParts ? ` (${timingParts})` : ""}`
+    );
+  }
+
+  if (allowInputRepeat) {
+    lines.push("• Add 1–9 at the end to repeat (example: a3)");
+  }
+
+  lines.push(
+    "",
+    "Anarchy: each valid input is queued and played in order.",
+    "Democracy: type an input to vote. The most popular vote wins when the timer ends."
+  );
+
+  if (government === "chat_decides") {
+    lines.splice(
+      lines.length - 2,
+      0,
+      `• Chat Decides: anarchy and democracy are listed with other inputs; votes queue like everything else and the bar switches at the ${chatDecidesSwitchThreshold}% / ${100 - chatDecidesSwitchThreshold}% lines (votes expire after ${chatDecidesVoteTtlMinutes} min)`
+    );
+  }
+
+  return lines.join("\n");
 }
 
 async function copyToClipboard(text, setCopied) {
@@ -175,11 +310,45 @@ async function copyToClipboard(text, setCopied) {
   }
 }
 
-function SetupControllerFooter({ buttonMap, disabledInputs = [] }) {
+function SetupControllerFooter({
+  buttonMap,
+  disabledInputs = [],
+  defaultTimeLength,
+  tapTime,
+  pressTime,
+  holdTime,
+  controller,
+  allowCustomInputDuration,
+  maxInputDuration,
+  allowTimingPrefixes,
+  allowInputRepeat,
+  allowInputSequences,
+  maxInputSequenceLength,
+  enabledTimingModes,
+  government,
+  chatDecidesSwitchThreshold,
+  chatDecidesVoteTtlMinutes,
+}) {
   const [copiedInputs, setCopiedInputs] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
-  const inputs = getAvailableChatInputs(buttonMap, disabledInputs);
-  const inputsText = formatInputsForClipboard(inputs);
+  const inputs = getAvailableChatInputs(buttonMap, disabledInputs, government);
+  const inputsText = formatInputsForClipboard(inputs, {
+    defaultTimeLength,
+    tapTime,
+    pressTime,
+    holdTime,
+    controller,
+    allowCustomInputDuration,
+    maxInputDuration,
+    allowTimingPrefixes,
+    allowInputRepeat,
+    allowInputSequences,
+    maxInputSequenceLength,
+    enabledTimingModes,
+    government,
+    chatDecidesSwitchThreshold,
+    chatDecidesVoteTtlMinutes,
+  });
   const urlLabel = `${COMMANDS_LIST_URL.replace("http://", "").slice(0, 18)}…`;
 
   return (
@@ -190,7 +359,7 @@ function SetupControllerFooter({ buttonMap, disabledInputs = [] }) {
         title={inputsText}
         onClick={() => copyToClipboard(inputsText, setCopiedInputs)}
       >
-        <span className="main-overlay-btn__text">Copy chat inputs</span>
+        <span className="main-overlay-btn__text">Copy chat inputs & instructions</span>
         <span className="icon main-overlay-btn__icon">
           {copiedInputs ? "check" : "content_copy"}
         </span>
@@ -211,7 +380,7 @@ function SetupControllerFooter({ buttonMap, disabledInputs = [] }) {
 }
 
 export function SetupApp() {
-  const { ready, setup } = useChatPlaysState("setup");
+  const { ready, setup, main } = useChatPlaysState("setup");
   const [demMinutes, setDemMinutes] = useState(null);
   const [demSeconds, setDemSeconds] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -257,6 +426,19 @@ export function SetupApp() {
   }
 
   const pushSettings = (payload) => api.updateSetupSettings(payload);
+  const enabledTimingModes = getEnabledTimingModes(setup);
+  const toggleTimingMode = (name) => {
+    const field = `timing_${name}_enabled`;
+    const isEnabled = setup[field] !== false;
+    if (isEnabled && enabledTimingModes.length <= 1) {
+      return;
+    }
+    pushSettings(buildTimingSettings(setup, { [field]: !isEnabled }));
+  };
+  const twitchUsername =
+    main?.twitch_username_verified && main?.twitch_display_name?.trim()
+      ? main.twitch_display_name.trim()
+      : "";
   const autoLinkAvailable = setup.automatic_link_available ?? false;
   const linkMode =
     setup.setup_link_mode === "automatic" && autoLinkAvailable
@@ -266,17 +448,36 @@ export function SetupApp() {
   return (
     <div className="setup-shell panel">
       <header className="setup-topbar">
-        <button type="button" className="setup-back-btn" onClick={() => closeSetupWindow()}>
-          ← Back
-        </button>
-        <span className="setup-topbar__title muted">Setup / Test</span>
-        <button type="button" onClick={() => setSettingsOpen(true)}>
-          Settings
-        </button>
+        <div className="setup-topbar__left">
+          <button type="button" className="setup-back-btn" onClick={() => closeSetupWindow()}>
+            ← Back
+          </button>
+          <span className="setup-topbar__title muted">Setup / Test</span>
+          <button type="button" onClick={() => setSettingsOpen(true)}>
+            Settings
+          </button>
+        </div>
+        <div className="setup-topbar__chat">
+          <button
+            type="button"
+            className="main-overlay-btn setup-obs-link-btn"
+            title={OVERLAY_URL}
+            disabled
+          >
+            <span className="main-overlay-btn__text">
+              {OVERLAY_URL.replace("http://", "").slice(0, 15) + "…"}
+            </span>
+            <span className="icon main-overlay-btn__icon">content_copy</span>
+          </button>
+        </div>
       </header>
 
       <div className="setup-layout">
-      <div className="card setup-layout__settings">
+      <div
+        className={`card setup-layout__settings${
+          setup.meta_mode === "setup" ? " setup-layout__settings--setup-mode" : ""
+        }`}
+      >
         <div className="setup-panel-inner">
         <div className="row setup-settings-row">
           <div className="col setup-settings-col">
@@ -306,7 +507,7 @@ export function SetupApp() {
             </label>
 
             {setup.controller === "GBA" && linkMode === "manual" && (
-              <div className="col">
+              <label className="col">
                 <span>Game/Emulator</span>
                 <EmulatorDetectField
                   compact
@@ -323,7 +524,7 @@ export function SetupApp() {
                   }}
                   scanning={emulatorScanning}
                 />
-              </div>
+              </label>
             )}
 
             {linkMode === "manual" && (
@@ -352,6 +553,7 @@ export function SetupApp() {
               >
                 <option value="anarchy">Anarchy</option>
                 <option value="democracy">Democracy</option>
+                <option value="chat_decides">Chat Decides</option>
               </select>
             </label>
             <label className="col">
@@ -380,49 +582,184 @@ export function SetupApp() {
         </div>
 
         {setup.meta_mode === "test" ? (
-          <div className="setup-link-content timing-row" style={{ flexDirection: "row", flexWrap: "nowrap" }}>
-            {[
-              ["tap", setup.tap_time],
-              ["press", setup.press_time],
-              ["hold", setup.hold_time],
-            ].map(([name, value]) => (
-              <label key={name} className="timing-group">
+          <div className="setup-link-content setup-link-content--test">
+            <p className="timing-options-header">
+              Double-click tap, press, or hold to enable or disable it. At least one must stay active.
+            </p>
+            <div className="timing-row">
+              {[
+                ["tap", setup.tap_time],
+                ["press", setup.press_time],
+                ["hold", setup.hold_time],
+              ].map(([name, value]) => {
+                const isEnabled = setup[`timing_${name}_enabled`] !== false;
+                return (
+                  <div
+                    key={name}
+                    className={`timing-group${isEnabled ? "" : " timing-group--disabled"}`}
+                    onDoubleClick={(event) => {
+                      event.preventDefault();
+                      toggleTimingMode(name);
+                    }}
+                    title={
+                      isEnabled
+                        ? "Double-click to disable this timing option"
+                        : "Double-click to enable this timing option"
+                    }
+                  >
+                    <input
+                      type="radio"
+                      name="defaultTime"
+                      checked={setup.default_time_length === name}
+                      disabled={!isEnabled}
+                      onChange={() =>
+                        pushSettings(buildTimingSettings(setup, { default_time_length: name }))
+                      }
+                    />
+                    <span className="pixel timing-group__label" style={{ textTransform: "capitalize" }}>
+                      {name}
+                    </span>
+                    <div className="timing-value-wrap">
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={value}
+                        disabled={!isEnabled}
+                        onChange={(event) => {
+                          const numeric = Number(event.target.value) || 0;
+                          pushSettings(
+                            buildTimingSettings(setup, { [`${name}_time`]: numeric })
+                          );
+                        }}
+                      />
+                      <span className="timing-unit">s</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="setup-chat-duration-options">
+              <label className="setup-chat-duration-options__check">
                 <input
-                  type="radio"
-                  name="defaultTime"
-                  checked={setup.default_time_length === name}
-                  onChange={() =>
-                    pushSettings({
-                      tap_time: setup.tap_time,
-                      press_time: setup.press_time,
-                      hold_time: setup.hold_time,
-                      default_time_length: name,
-                    })
+                  type="checkbox"
+                  checked={setup.allow_timing_prefixes !== false}
+                  onChange={(event) =>
+                    pushSettings(
+                      buildChatInputPolicy(setup, {
+                        allow_timing_prefixes: event.target.checked,
+                      })
+                    )
                   }
                 />
-                <span className="pixel" style={{ textTransform: "capitalize" }}>
-                  {name}
-                </span>
-                <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                <span>Allow tap / press / hold</span>
+              </label>
+              <label className="setup-chat-duration-options__check">
+                <input
+                  type="checkbox"
+                  checked={setup.allow_input_repeat !== false}
+                  onChange={(event) =>
+                    pushSettings(
+                      buildChatInputPolicy(setup, {
+                        allow_input_repeat: event.target.checked,
+                      })
+                    )
+                  }
+                />
+                <span>Allow repeat</span>
+              </label>
+              <label className="setup-chat-duration-options__check">
+                <input
+                  type="checkbox"
+                  checked={!!setup.allow_custom_input_duration}
+                  onChange={(event) =>
+                    pushSettings(
+                      buildChatInputPolicy(setup, {
+                        allow_custom_input_duration: event.target.checked,
+                      })
+                    )
+                  }
+                />
+                <span>Allow custom input duration</span>
+              </label>
+              {setup.allow_custom_input_duration && (
+                <label className="setup-chat-duration-options__max">
+                  <span>Max time</span>
                   <input
                     type="number"
-                    step="0.1"
-                    value={value}
-                    style={{ paddingRight: 20 }}
-                    onChange={(event) => {
-                      const numeric = Number(event.target.value) || 0;
-                      pushSettings({
-                        tap_time: name === "tap" ? numeric : setup.tap_time,
-                        press_time: name === "press" ? numeric : setup.press_time,
-                        hold_time: name === "hold" ? numeric : setup.hold_time,
-                        default_time_length: setup.default_time_length,
-                      });
-                    }}
+                    min={1}
+                    max={99}
+                    value={setup.max_input_duration ?? 15}
+                    onChange={(event) =>
+                      pushSettings(
+                        buildChatInputPolicy(setup, {
+                          allow_custom_input_duration: true,
+                          max_input_duration: Number(event.target.value) || 1,
+                        })
+                      )
+                    }
                   />
-                  <span style={{ position: "absolute", right: 7, fontSize: "0.8rem", color: "var(--app-muted)", pointerEvents: "none", userSelect: "none" }}>s</span>
-                </div>
+                  <span className="timing-unit">s</span>
+                </label>
+              )}
+              <label className="setup-chat-duration-options__check">
+                <input
+                  type="checkbox"
+                  checked={!!setup.allow_input_sequences}
+                  onChange={(event) =>
+                    pushSettings(
+                      buildChatInputPolicy(setup, {
+                        allow_input_sequences: event.target.checked,
+                      })
+                    )
+                  }
+                />
+                <span>Allow input sequences</span>
               </label>
-            ))}
+              {setup.allow_input_sequences && (
+                <label className="setup-chat-duration-options__max">
+                  <span>Max sequence length</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={setup.max_input_sequence_length ?? 3}
+                    onChange={(event) =>
+                      pushSettings(
+                        buildChatInputPolicy(setup, {
+                          allow_input_sequences: true,
+                          max_input_sequence_length: Number(event.target.value) || 1,
+                        })
+                      )
+                    }
+                  />
+                </label>
+              )}
+            </div>
+            <div className="setup-fake-chat-row">
+              <button
+                type="button"
+                disabled={setup.fake_chat_running}
+                onClick={() => api.startFakeChatRoll().catch(() => {})}
+              >
+                {setup.government === "democracy"
+                  ? "Roll fake votes"
+                  : setup.government === "chat_decides"
+                    ? "Roll fake chat / votes"
+                    : "Roll fake chat"}
+              </button>
+              {setup.fake_chat_running && (
+                <button type="button" onClick={() => api.stopFakeChatRoll().catch(() => {})}>
+                  Stop
+                </button>
+              )}
+              {(setup.government === "democracy" || setup.government === "chat_decides") &&
+                !setup.democracy_timer_running &&
+                !setup.fake_chat_running &&
+                (setup.government !== "chat_decides" ||
+                  setup.chat_decides_active_gov === "democracy") && (
+                <span className="muted setup-fake-chat-hint">Starts vote timer</span>
+              )}
+            </div>
           </div>
         ) : (
           linkMode === "automatic" && (
@@ -465,6 +802,21 @@ export function SetupApp() {
         <SetupControllerFooter
           buttonMap={setup.button_map}
           disabledInputs={setup.disabled_inputs || []}
+          defaultTimeLength={setup.default_time_length}
+          tapTime={setup.tap_time}
+          pressTime={setup.press_time}
+          holdTime={setup.hold_time}
+          controller={setup.controller}
+          allowCustomInputDuration={setup.allow_custom_input_duration}
+          maxInputDuration={setup.max_input_duration}
+          allowTimingPrefixes={setup.allow_timing_prefixes !== false}
+          allowInputRepeat={setup.allow_input_repeat !== false}
+          allowInputSequences={!!setup.allow_input_sequences}
+          maxInputSequenceLength={setup.max_input_sequence_length ?? 3}
+          enabledTimingModes={enabledTimingModes}
+          government={setup.government}
+          chatDecidesSwitchThreshold={setup.chat_decides_switch_threshold ?? 75}
+          chatDecidesVoteTtlMinutes={setup.chat_decides_vote_ttl_minutes ?? 5}
         />
         </div>
       </div>
@@ -535,7 +887,43 @@ export function SetupApp() {
             queue={setup.anarchy_queue}
             countdownLine={setup.setup_countdown_line}
             flashLine={linkFlash}
+            username={twitchUsername}
             onSubmit={(text) => api.submitInput(text)}
+            chatTheme={chatTheme}
+            onThemeToggle={() => setChatTheme(t => t === "dark" ? "light" : "dark")}
+          />
+        ) : setup.government === "chat_decides" ? (
+          <ChatDecidesPanel
+            activeGovernment={setup.chat_decides_active_gov}
+            anarchyVotes={setup.chat_decides_anarchy_votes}
+            democracyVotes={setup.chat_decides_democracy_votes}
+            democracyPercent={setup.chat_decides_democracy_percent ?? 50}
+            lastVote={setup.chat_decides_last_vote ?? ""}
+            defaultGov={setup.chat_decides_default_gov ?? "anarchy"}
+            switchThreshold={setup.chat_decides_switch_threshold ?? 75}
+            voteTtlMinutes={setup.chat_decides_vote_ttl_minutes ?? 5}
+            onSettingsChange={(payload) => pushSettings(payload)}
+            queue={
+              setup.chat_decides_active_gov === "democracy"
+                ? setup.democracy_queue
+                : setup.anarchy_queue
+            }
+            countdownLine={setup.setup_countdown_line}
+            flashLine={linkFlash}
+            voteSlots={setup.vote_slots}
+            countdownLabel={setup.democracy_countdown_label}
+            latestWinner={setup.latest_winner}
+            minutes={minutes}
+            seconds={seconds}
+            timerRunning={setup.democracy_timer_running}
+            username={twitchUsername}
+            onSubmit={(text) => api.submitInput(text)}
+            onMinutesChange={setDemMinutes}
+            onSecondsChange={setDemSeconds}
+            onUpdateTime={() =>
+              pushSettings({ democracy_minutes: minutes, democracy_seconds: seconds })
+            }
+            onToggleTimer={() => api.toggleDemocracyTimer()}
             chatTheme={chatTheme}
             onThemeToggle={() => setChatTheme(t => t === "dark" ? "light" : "dark")}
           />
@@ -550,6 +938,7 @@ export function SetupApp() {
             minutes={minutes}
             seconds={seconds}
             timerRunning={setup.democracy_timer_running}
+            username={twitchUsername}
             onSubmit={(text) => api.submitInput(text)}
             onMinutesChange={setDemMinutes}
             onSecondsChange={setDemSeconds}

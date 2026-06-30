@@ -3,15 +3,21 @@
 import copy
 import logging
 import platform
+import random
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional
+from typing import Callable, Deque, List, Optional, Tuple
 
 from ChatPlays import ChatPlays
-from input import Input
+from input import Input, InputSequence, WAIT_INPUT
 
 logger = logging.getLogger(__name__)
+
+DEMOCRACY_LEADER_SLOTS = 7
+CHAT_DECIDES_MODE = "chat_decides"
+GOVERNANCE_VOTE_CHOICES = ("anarchy", "democracy")
 
 IS_MAC = platform.system() == "Darwin"
 IS_WIN = platform.system() == "Windows"
@@ -70,6 +76,9 @@ class SetupTestState:
     press_time: float = 0.5
     hold_time: float = 1.0
     default_time_length: str = "press"
+    timing_tap_enabled: bool = True
+    timing_press_enabled: bool = True
+    timing_hold_enabled: bool = True
     countdown_seconds: int = 5
     democracy_minutes: int = 0
     democracy_seconds: int = 15
@@ -80,7 +89,7 @@ class SetupTestState:
     democracy_queue: List[str] = field(default_factory=list)
     setup_log: List[str] = field(default_factory=list)
     vote_slots: List[VoteSlot] = field(
-        default_factory=lambda: [VoteSlot() for _ in range(4)]
+        default_factory=lambda: [VoteSlot() for _ in range(DEMOCRACY_LEADER_SLOTS)]
     )
     button_map: dict = field(default_factory=dict)
     keyboard_map: dict = field(default_factory=dict)
@@ -105,6 +114,22 @@ class SetupTestState:
     automatic_link_available: bool = False
     setup_countdown_line: str = ""
     setup_countdown_active: bool = False
+    executing_input: str = ""
+    fake_chat_running: bool = False
+    allow_custom_input_duration: bool = False
+    max_input_duration: int = 15
+    allow_timing_prefixes: bool = True
+    allow_input_repeat: bool = True
+    allow_input_sequences: bool = False
+    max_input_sequence_length: int = 3
+    chat_decides_default_gov: str = "anarchy"
+    chat_decides_switch_threshold: int = 75
+    chat_decides_vote_ttl_minutes: int = 5
+    chat_decides_active_gov: str = "anarchy"
+    chat_decides_anarchy_votes: int = 0
+    chat_decides_democracy_votes: int = 0
+    chat_decides_democracy_percent: float = 50.0
+    chat_decides_last_vote: str = ""
 
 
 class SetupTestService:
@@ -124,6 +149,11 @@ class SetupTestService:
         self.state.controller = self._controller_label()
         self._refresh_button_map()
         self._countdown_runner = SetupCountdownRunner(self)
+        self._pending_democracy_votes: Deque[Tuple[int, str]] = deque()
+        self._democracy_vote_serial = 0
+        self._chat_decides_gov_votes: Deque[Tuple[float, str]] = deque()
+        self._chat_decides_gov_pending: Deque[Tuple[float, str]] = deque()
+        self._chat_decides_prune_timer: Optional[threading.Timer] = None
 
         self._anarchy_thread = threading.Thread(
             target=self._run_anarchy_thread, daemon=True
@@ -131,8 +161,12 @@ class SetupTestService:
         self._democracy_thread = threading.Thread(
             target=self._run_democracy_thread, daemon=True
         )
+        self._test_queue_thread = threading.Thread(
+            target=self._run_test_queue_processor, daemon=True
+        )
         self._anarchy_thread.start()
         self._democracy_thread.start()
+        self._test_queue_thread.start()
 
     def set_program_live(self, live: bool):
         self._program_live = bool(live)
@@ -179,11 +213,20 @@ class SetupTestService:
         self.state.press_time = st.getPressTime()
         self.state.hold_time = st.getHoldTime()
         self.state.default_time_length = st.getDefualtTimeLengthStr() or "press"
+        self.state.timing_tap_enabled = st.timingTapEnabled
+        self.state.timing_press_enabled = st.timingPressEnabled
+        self.state.timing_hold_enabled = st.timingHoldEnabled
         self.state.countdown_seconds = st.getCountdown()
         total = st.getMetaDemTime()
         self.state.democracy_minutes = total // 60
         self.state.democracy_seconds = total % 60
         self.state.latest_winner = st.lastDemocracyWinner
+        self.state.allow_custom_input_duration = st.getAllowCustomInputDuration()
+        self.state.max_input_duration = st.getMaxTimeLength()
+        self.state.allow_timing_prefixes = st.getAllowTimingPrefixes()
+        self.state.allow_input_repeat = st.getAllowInputRepeat()
+        self.state.allow_input_sequences = st.getAllowInputSequences()
+        self.state.max_input_sequence_length = st.getMaxInputSequenceLength()
 
     def _refresh_button_map(self):
         self.state.button_map = self.program.setupTest.controller.getButtonsForUiDict()
@@ -208,6 +251,22 @@ class SetupTestService:
             name, "GBA"
         )
 
+    def _is_chat_decides_mode(self) -> bool:
+        return self.state.government == CHAT_DECIDES_MODE
+
+    def _effective_government(self) -> str:
+        if self._is_chat_decides_mode():
+            return self.state.chat_decides_active_gov
+        return self.state.government
+
+    def _apply_sub_government_threads(self, sub_gov: str):
+        if sub_gov == "anarchy":
+            self.program.setupTest.democracyThreadStatus = False
+            self.program.setupTest.anarchyThreadStatus = True
+        else:
+            self.program.setupTest.anarchyThreadStatus = False
+            self.program.setupTest.democracyThreadStatus = True
+
     def _format_democracy_countdown(self, total_seconds: int) -> str:
         minutes = total_seconds // 60
         seconds = total_seconds % 60
@@ -216,7 +275,7 @@ class SetupTestService:
         return f"Countdown: {minutes}:0{seconds}"
 
     def _chat_queue(self, gov: Optional[str] = None):
-        government = gov or self.program.setupTest.getMetaGov()
+        government = gov or self._effective_government()
         if government == "democracy":
             return self.state.democracy_queue
         return self.state.anarchy_queue
@@ -230,6 +289,177 @@ class SetupTestService:
 
     def _clear_chat_queue(self, gov: Optional[str] = None):
         self._chat_queue(gov).clear()
+
+    def _clear_democracy_chat(self):
+        self.state.democracy_queue.clear()
+        self._pending_democracy_votes.clear()
+
+    def _enqueue_democracy_vote(self, text: str):
+        self._democracy_vote_serial += 1
+        self._pending_democracy_votes.append((self._democracy_vote_serial, text))
+        self._append_chat_line(text, prepend=True)
+
+    def _cancel_chat_decides_prune_timer(self):
+        if self._chat_decides_prune_timer:
+            self._chat_decides_prune_timer.cancel()
+            self._chat_decides_prune_timer = None
+
+    def _schedule_chat_decides_prune(self):
+        self._cancel_chat_decides_prune_timer()
+        if not self._is_chat_decides_mode():
+            return
+        self._chat_decides_prune_timer = threading.Timer(1.0, self._chat_decides_prune_step)
+        self._chat_decides_prune_timer.daemon = True
+        self._chat_decides_prune_timer.start()
+
+    def _chat_decides_prune_step(self):
+        if self._is_chat_decides_mode():
+            self._prune_and_recompute_chat_decides()
+            self._schedule_chat_decides_prune()
+
+    def _enqueue_chat_decides_governance_vote(self, choice: str):
+        now = time.time()
+        with self._lock:
+            self._chat_decides_gov_pending.append((now, choice))
+            self._append_chat_line(choice)
+        self._prune_and_recompute_chat_decides(notify=True)
+
+    def _process_chat_decides_gov_queue(self, now: float):
+        ttl = max(60, int(self.state.chat_decides_vote_ttl_minutes) * 60)
+        queue = self._chat_queue()
+        while self._chat_decides_gov_pending:
+            timestamp, choice = self._chat_decides_gov_pending[0]
+            if now - timestamp > ttl:
+                self._chat_decides_gov_pending.popleft()
+                if queue and queue[0] == choice:
+                    queue.pop(0)
+                continue
+            if not queue or queue[0] != choice:
+                break
+            self._chat_decides_gov_votes.append((now, choice))
+            self.state.chat_decides_last_vote = choice
+            self._chat_decides_gov_pending.popleft()
+            queue.pop(0)
+            break
+
+    def _prune_and_recompute_chat_decides(self, *, notify: bool = False):
+        now = time.time()
+        previous = None
+        new_active = None
+        with self._lock:
+            self._process_chat_decides_gov_queue(now)
+            ttl = max(60, int(self.state.chat_decides_vote_ttl_minutes) * 60)
+            while self._chat_decides_gov_votes and self._chat_decides_gov_votes[0][0] < now - ttl:
+                self._chat_decides_gov_votes.popleft()
+
+            applied_vote_events = list(self._chat_decides_gov_votes)
+            anarchy = sum(1 for _t, choice in applied_vote_events if choice == "anarchy")
+            democracy = sum(1 for _t, choice in applied_vote_events if choice == "democracy")
+            self.state.chat_decides_anarchy_votes = anarchy
+            self.state.chat_decides_democracy_votes = democracy
+
+            previous = self.state.chat_decides_active_gov
+            threshold = max(51, min(int(self.state.chat_decides_switch_threshold), 99))
+            lower_bound = 100 - threshold
+
+            if not applied_vote_events:
+                democracy_percent = 50.0
+                new_active = self.state.chat_decides_default_gov
+            else:
+                total_votes = democracy + anarchy
+                democracy_percent = (democracy / total_votes) * 100.0
+                if democracy_percent >= threshold:
+                    new_active = "democracy"
+                elif democracy_percent <= lower_bound:
+                    new_active = "anarchy"
+                else:
+                    new_active = self.state.chat_decides_default_gov
+
+            self.state.chat_decides_democracy_percent = democracy_percent
+            self.state.chat_decides_active_gov = new_active
+
+        if new_active != previous:
+            self._on_chat_decides_active_gov_changed(previous, new_active)
+            notify = True
+        if notify:
+            self._notify()
+
+    def _on_chat_decides_active_gov_changed(self, old_gov: str, new_gov: str):
+        with self._lock:
+            if not self.state.setup_countdown_active and not self.state.manual_setup_active:
+                self._apply_sub_government_threads(new_gov)
+            if old_gov == "democracy" and new_gov == "anarchy":
+                self.state.democracy_timer_running = False
+                self._cancel_democracy_timer()
+                self._clear_democracy_chat()
+                self.program.setupTest.resetVoteList()
+                self.state.vote_slots = [VoteSlot() for _ in range(DEMOCRACY_LEADER_SLOTS)]
+            elif old_gov == "anarchy" and new_gov == "democracy":
+                if self.state.meta_mode == "test" and not self.state.democracy_timer_running:
+                    self._begin_democracy_vote_round()
+
+    def _clear_chat_decides_governance_votes(self):
+        self._chat_decides_gov_votes.clear()
+        self._chat_decides_gov_pending.clear()
+        for queue in (self.state.anarchy_queue, self.state.democracy_queue):
+            queue[:] = [item for item in queue if item not in GOVERNANCE_VOTE_CHOICES]
+        self.state.chat_decides_anarchy_votes = 0
+        self.state.chat_decides_democracy_votes = 0
+        self.state.chat_decides_democracy_percent = 50.0
+        self.state.chat_decides_last_vote = ""
+
+    def _stop_democracy_vote_round(self):
+        with self._lock:
+            if not self.state.democracy_timer_running:
+                return
+            self.state.democracy_timer_running = False
+            self._cancel_democracy_timer()
+            self._reset_dem_votes(ran_out=False)
+            self._clear_democracy_chat()
+            total = (self.state.democracy_minutes * 60) + self.state.democracy_seconds
+            self.program.setupTest.setMetaDemTime(total)
+            self.state.democracy_countdown_label = self._format_democracy_countdown(total)
+
+    def _apply_chat_decides_default_start(self):
+        with self._lock:
+            previous = self.state.chat_decides_active_gov
+            new_active = self.state.chat_decides_default_gov
+            self._clear_chat_decides_governance_votes()
+            self.state.chat_decides_active_gov = new_active
+            self.state.chat_decides_democracy_percent = 50.0
+        if previous != new_active:
+            self._on_chat_decides_active_gov_changed(previous, new_active)
+        else:
+            with self._lock:
+                if new_active == "democracy":
+                    self._stop_democracy_vote_round()
+                    self.program.setupTest.resetVoteList()
+                    self.state.vote_slots = [VoteSlot() for _ in range(DEMOCRACY_LEADER_SLOTS)]
+        self._notify()
+
+    def set_chat_decides_settings(
+        self,
+        default_gov: str,
+        switch_threshold: int,
+        vote_ttl_minutes: int,
+        *,
+        apply_default: bool = False,
+    ):
+        default = default_gov.lower() if default_gov.lower() in GOVERNANCE_VOTE_CHOICES else "anarchy"
+        threshold = max(51, min(int(switch_threshold), 99))
+        ttl_minutes = max(1, min(int(vote_ttl_minutes), 1440))
+        default_changed = False
+        with self._lock:
+            default_changed = default != self.state.chat_decides_default_gov
+            self.state.chat_decides_default_gov = default
+            self.state.chat_decides_switch_threshold = threshold
+            self.state.chat_decides_vote_ttl_minutes = ttl_minutes
+        if self._is_chat_decides_mode() and (default_changed or apply_default):
+            self._apply_chat_decides_default_start()
+        elif self._is_chat_decides_mode():
+            self._prune_and_recompute_chat_decides(notify=True)
+        else:
+            self._notify()
 
     def countdown_input_names(self) -> List[str]:
         inputs = list(self.program.setupTest.controller.getInputs().keys())
@@ -271,7 +501,7 @@ class SetupTestService:
         self._notify()
 
     def countdown_fire_input(self, button: str):
-        self.program.setupTest.metaCommand(Input(button, self.program.setupTest))
+        self._execute_chat_command(button)
 
     def countdown_clear_display(self):
         with self._lock:
@@ -285,12 +515,191 @@ class SetupTestService:
             self._manual_setup_index += 1
         self._begin_manual_setup_step()
 
-    def _execute_test_command(self, text: str):
+    def _execute_chat_command(self, text: str):
         try:
-            input_obj = Input(text, self.program.setupTest)
-            self.program.setupTest.metaCommand(input_obj)
+            command = InputSequence(text, self.program.setupTest)
+            self.program.setupTest.metaCommand(command)
         except Exception as error:
-            logger.exception("Failed to execute test command %r: %s", text, error)
+            logger.exception("Failed to execute chat command %r: %s", text, error)
+
+    def _is_valid_chat_command(self, text: str) -> bool:
+        try:
+            command = InputSequence(text, self.program.setupTest)
+        except Exception:
+            return False
+
+        controller_inputs = set(self.program.setupTest.controller.getInputs().keys())
+        disabled = set(self.state.disabled_inputs)
+        for input_obj in command.getInputs():
+            name = input_obj.getInput()
+            if name == WAIT_INPUT:
+                continue
+            if name not in controller_inputs or name in disabled:
+                return False
+        return True
+
+    def _valid_test_inputs(self) -> List[str]:
+        inputs = list(self.program.setupTest.controller.getInputs().keys())
+        disabled = set(self.state.disabled_inputs)
+        available = [name for name in inputs if name not in disabled]
+        available.append(WAIT_INPUT)
+        if self._is_chat_decides_mode():
+            available.extend(GOVERNANCE_VOTE_CHOICES)
+        return available
+
+    def _peek_next_test_queue_item(self) -> Optional[str]:
+        queue = self._chat_queue()
+        if not queue:
+            return None
+        return queue[0]
+
+    def _remove_test_queue_item(self, text: str):
+        queue = self._chat_queue()
+        if queue and queue[0] == text:
+            queue.pop(0)
+
+    def _run_test_queue_processor(self):
+        while True:
+            try:
+                time.sleep(0.05)
+                if self.program.setupTest.getMetaMode() != "test":
+                    continue
+                if self._is_chat_decides_mode():
+                    with self._lock:
+                        if self.state.executing_input:
+                            continue
+                        if self.state.setup_countdown_active or self.state.manual_setup_active:
+                            continue
+                        text = self._peek_next_test_queue_item()
+                        if text and text in GOVERNANCE_VOTE_CHOICES:
+                            self.state.executing_input = text
+                        else:
+                            text = None
+                    if text:
+                        self._prune_and_recompute_chat_decides(notify=True)
+                        with self._lock:
+                            self.state.executing_input = ""
+                        continue
+                if self._effective_government() != "anarchy":
+                    continue
+                with self._lock:
+                    if self.state.executing_input:
+                        continue
+                    if self.state.setup_countdown_active or self.state.manual_setup_active:
+                        continue
+                    text = self._peek_next_test_queue_item()
+                    if not text:
+                        continue
+                    self.state.executing_input = text
+                self._notify()
+                try:
+                    self._execute_chat_command(text)
+                finally:
+                    with self._lock:
+                        self.state.executing_input = ""
+                        self._remove_test_queue_item(text)
+                    self._notify()
+            except Exception as error:
+                logger.exception("Test queue processor error: %s", error)
+                with self._lock:
+                    self.state.executing_input = ""
+                self._notify()
+
+    def _pick_fake_anarchy_input(self, pool: List[str]) -> str:
+        return random.choice(pool).lower()
+
+    def _pick_fake_democracy_input(self, pool: List[str]) -> str:
+        vote_list = self.program.setupTest.getVoteList()
+        if vote_list and random.random() < 0.65:
+            return random.choice(list(vote_list.keys()))
+        return random.choice(pool).lower()
+
+    def _roll_fake_chat_input(self, pool: List[str]):
+        if self._is_chat_decides_mode():
+            text = random.choice(pool).lower()
+            if text in GOVERNANCE_VOTE_CHOICES:
+                self._enqueue_chat_decides_governance_vote(text)
+                return
+            game_pool = [name for name in pool if name not in GOVERNANCE_VOTE_CHOICES]
+            if self._effective_government() == "democracy":
+                self._enqueue_democracy_vote(self._pick_fake_democracy_input(game_pool or pool))
+                return
+            self._append_chat_line(self._pick_fake_anarchy_input(game_pool or pool))
+            return
+        if self.state.government == "democracy":
+            text = self._pick_fake_democracy_input(pool)
+            self._enqueue_democracy_vote(text)
+            return
+        text = self._pick_fake_anarchy_input(pool)
+        self._append_chat_line(text)
+
+    def _default_execution_seconds(self) -> float:
+        mode = self.state.default_time_length or "press"
+        if mode == "tap":
+            return self.state.tap_time
+        if mode == "hold":
+            return self.state.hold_time
+        return self.state.press_time
+
+    def _fake_chat_roll_interval(self) -> float:
+        execution = self._default_execution_seconds()
+        # Roll much faster than execution so the chat box fills up.
+        return max(0.04, execution * 0.15)
+
+    def _begin_democracy_vote_round(self):
+        total = (self.state.democracy_minutes * 60) + self.state.democracy_seconds
+        self.program.setupTest.setMetaDemTime(total)
+        self.program.setupTest.setLastDemocracyItem(None)
+        self.program.setupTest.resetVoteList()
+        self._pending_democracy_votes.clear()
+        self.state.vote_slots = [VoteSlot() for _ in range(DEMOCRACY_LEADER_SLOTS)]
+        self.state.democracy_countdown_label = self._format_democracy_countdown(total)
+        self.state.democracy_timer_running = True
+        self._schedule_democracy_tick()
+
+    def start_fake_chat_roll(self, count: int = 0):
+        if self.state.meta_mode != "test":
+            return
+        with self._lock:
+            if self.state.fake_chat_running:
+                return
+            self.state.fake_chat_running = True
+            if self.state.government in ("democracy", CHAT_DECIDES_MODE) and not self.state.democracy_timer_running:
+                if self.state.government == "democracy" or self._effective_government() == "democracy":
+                    self._begin_democracy_vote_round()
+        self._notify()
+        threading.Thread(
+            target=self._run_fake_chat_roll,
+            args=(count,),
+            daemon=True,
+        ).start()
+
+    def stop_fake_chat_roll(self):
+        with self._lock:
+            self.state.fake_chat_running = False
+        self._stop_democracy_vote_round()
+        self._notify()
+
+    def _run_fake_chat_roll(self, count: int):
+        try:
+            pool = self._valid_test_inputs()
+            if not pool and not self._is_chat_decides_mode():
+                return
+            rolled = 0
+            while True:
+                with self._lock:
+                    if not self.state.fake_chat_running:
+                        break
+                self._roll_fake_chat_input(pool)
+                self._notify()
+                rolled += 1
+                if count > 0 and rolled >= count:
+                    break
+                time.sleep(self._fake_chat_roll_interval())
+        finally:
+            with self._lock:
+                self.state.fake_chat_running = False
+            self._notify()
 
     def set_meta_mode(self, mode: str):
         normalized = mode.lower()
@@ -302,6 +711,10 @@ class SetupTestService:
                 self.cancel_manual_setup()
             else:
                 self._resume_gov_threads()
+        else:
+            self.stop_fake_chat_roll()
+            with self._lock:
+                self.state.executing_input = ""
         with self._lock:
             self.program.setupTest.setMetaMode(normalized)
             self.state.meta_mode = normalized
@@ -314,24 +727,30 @@ class SetupTestService:
 
     def set_government(self, gov: str):
         normalized = gov.lower()
-        if normalized not in ("anarchy", "democracy"):
+        if normalized not in ("anarchy", "democracy", CHAT_DECIDES_MODE):
             return
+        self.stop_fake_chat_roll()
+        self._cancel_chat_decides_prune_timer()
         with self._lock:
             self.program.setupTest.setMetaGov(normalized)
             self.state.government = normalized
+            if normalized == CHAT_DECIDES_MODE:
+                self._clear_chat_decides_governance_votes()
+                self.state.chat_decides_active_gov = self.state.chat_decides_default_gov
+                sub_gov = self.state.chat_decides_active_gov
+            else:
+                sub_gov = normalized
             if self.state.setup_countdown_active or self.state.manual_setup_active:
-                if normalized == "anarchy":
+                if sub_gov == "anarchy":
                     self.program.setupTest.setAnarchyThreadStatus(False)
                     self.program.setupTest.democracyThreadStatus = False
                 else:
                     self.program.setupTest.anarchyThreadStatus = False
                     self.program.setupTest.setDemocracyThreadStatus(False)
-            elif normalized == "anarchy":
-                self.program.setupTest.democracyThreadStatus = False
-                self.program.setupTest.anarchyThreadStatus = True
             else:
-                self.program.setupTest.anarchyThreadStatus = False
-                self.program.setupTest.democracyThreadStatus = True
+                self._apply_sub_government_threads(sub_gov)
+        if normalized == CHAT_DECIDES_MODE:
+            self._schedule_chat_decides_prune()
         self._notify()
 
     def set_setup_link_mode(self, mode: str):
@@ -623,23 +1042,73 @@ class SetupTestService:
             if self._democracy_timer and self.state.democracy_timer_running:
                 self.program.setupTest.resetVoteList()
                 self._reset_dem_votes(ran_out=False)
-                self.state.democracy_queue.clear()
+                self._clear_democracy_chat()
         if self.state.setup_link_mode == "automatic":
             self.scan_emulator()
         else:
             self._refresh_automatic_link_availability()
             self._notify()
 
-    def set_time_lengths(self, tap: float, press: float, hold: float, default: str):
+    def set_time_lengths(
+        self,
+        tap: float,
+        press: float,
+        hold: float,
+        default: str,
+        timing_tap_enabled: bool = True,
+        timing_press_enabled: bool = True,
+        timing_hold_enabled: bool = True,
+    ):
+        enabled = {
+            "tap": timing_tap_enabled,
+            "press": timing_press_enabled,
+            "hold": timing_hold_enabled,
+        }
+        if sum(enabled.values()) < 1:
+            return
+        if default not in enabled or not enabled[default]:
+            default = next(mode for mode in ("tap", "press", "hold") if enabled[mode])
         with self._lock:
             self.program.setupTest.setTapTime(tap)
             self.program.setupTest.setPressTime(press)
             self.program.setupTest.setHoldTime(hold)
+            self.program.setupTest.setTimingTapEnabled(timing_tap_enabled)
+            self.program.setupTest.setTimingPressEnabled(timing_press_enabled)
+            self.program.setupTest.setTimingHoldEnabled(timing_hold_enabled)
             self.program.setupTest.setDefaultTimeLength(default)
             self.state.tap_time = tap
             self.state.press_time = press
             self.state.hold_time = hold
             self.state.default_time_length = default
+            self.state.timing_tap_enabled = timing_tap_enabled
+            self.state.timing_press_enabled = timing_press_enabled
+            self.state.timing_hold_enabled = timing_hold_enabled
+        self._notify()
+
+    def set_chat_input_policy(
+        self,
+        allow_timing_prefixes: bool,
+        allow_input_repeat: bool,
+        allow_custom_duration: bool,
+        max_duration: int,
+        allow_input_sequences: bool,
+        max_sequence_length: int,
+    ):
+        max_duration = max(1, min(int(max_duration), 99))
+        max_sequence_length = max(1, min(int(max_sequence_length), 10))
+        with self._lock:
+            self.program.setupTest.setAllowTimingPrefixes(allow_timing_prefixes)
+            self.program.setupTest.setAllowInputRepeat(allow_input_repeat)
+            self.program.setupTest.setAllowCustomInputDuration(allow_custom_duration)
+            self.program.setupTest.setMaxTimeLength(max_duration)
+            self.program.setupTest.setAllowInputSequences(allow_input_sequences)
+            self.program.setupTest.setMaxInputSequenceLength(max_sequence_length)
+            self.state.allow_timing_prefixes = allow_timing_prefixes
+            self.state.allow_input_repeat = allow_input_repeat
+            self.state.allow_custom_input_duration = allow_custom_duration
+            self.state.max_input_duration = max_duration
+            self.state.allow_input_sequences = allow_input_sequences
+            self.state.max_input_sequence_length = max_sequence_length
         self._notify()
 
     def set_countdown(self, seconds: int):
@@ -649,39 +1118,49 @@ class SetupTestService:
         self._notify()
 
     def submit_input(self, text: str):
-        text = text.strip().lower()
+        text = text.strip().lower().replace(" ", "")
         if not text:
             return
 
         if text == "clear":
+            self.stop_fake_chat_roll()
             with self._lock:
-                if self.state.government == "anarchy":
+                if self._is_chat_decides_mode():
+                    self._clear_chat_decides_governance_votes()
+                    self.state.chat_decides_active_gov = self.state.chat_decides_default_gov
                     self.state.anarchy_queue.clear()
+                    self._clear_democracy_chat()
+                    self.program.setupTest.resetVoteList()
+                    self.state.vote_slots = [VoteSlot() for _ in range(DEMOCRACY_LEADER_SLOTS)]
+                    self.state.executing_input = ""
+                elif self.state.government == "anarchy":
+                    self.state.anarchy_queue.clear()
+                    self.state.executing_input = ""
                 else:
-                    self.state.democracy_queue.clear()
+                    self._clear_democracy_chat()
+                    self.program.setupTest.resetVoteList()
+                    self.state.vote_slots = [VoteSlot() for _ in range(DEMOCRACY_LEADER_SLOTS)]
             self._notify()
             return
 
-        inputs = list(self.program.setupTest.controller.getInputs().keys())
-        try:
-            input_obj = Input(text, self.program.setupTest)
-        except Exception:
+        if self._is_chat_decides_mode() and text in GOVERNANCE_VOTE_CHOICES:
+            if self.program.setupTest.getMetaMode() == "test":
+                self._enqueue_chat_decides_governance_vote(text)
             return
 
-        if input_obj.getInput() not in inputs:
+        if not self._is_valid_chat_command(text):
             return
 
         mode = self.program.setupTest.getMetaMode()
-        gov = self.program.setupTest.getMetaGov()
+        effective_gov = self._effective_government()
 
         if mode == "test":
             with self._lock:
-                if gov == "anarchy":
-                    self.state.anarchy_queue.append(text)
+                if effective_gov == "anarchy":
+                    self._append_chat_line(text)
                 else:
-                    self.state.democracy_queue.insert(0, text)
+                    self._enqueue_democracy_vote(text)
             self._notify()
-            self._execute_test_command(text)
             return
 
         self._countdown_runner.start_single(text)
@@ -745,19 +1224,14 @@ class SetupTestService:
         )
 
     def _pause_gov_threads_for_setup(self):
-        gov = self.program.setupTest.getMetaGov()
-        if gov == "anarchy":
+        if self._effective_government() == "anarchy":
             self.program.setupTest.setAnarchyThreadStatus(False)
         else:
             self.program.setupTest.setDemocracyThreadStatus(False)
 
     def _resume_gov_threads(self):
         if not self.state.manual_setup_active:
-            gov = self.program.setupTest.getMetaGov()
-            if gov == "anarchy":
-                self.program.setupTest.setAnarchyThreadStatus(True)
-            else:
-                self.program.setupTest.setDemocracyThreadStatus(True)
+            self._apply_sub_government_threads(self._effective_government())
 
     def _begin_manual_setup_step(self):
         completed = False
@@ -888,14 +1362,10 @@ class SetupTestService:
     def toggle_democracy_timer(self):
         with self._lock:
             if not self.state.democracy_timer_running:
-                self.state.democracy_timer_running = True
-                self.state.democracy_queue.clear()
-                self._schedule_democracy_tick()
+                self._clear_democracy_chat()
+                self._begin_democracy_vote_round()
             else:
-                self.state.democracy_timer_running = False
-                self._cancel_democracy_timer()
-                self._reset_dem_votes(ran_out=False)
-                self.state.democracy_queue.clear()
+                self._stop_democracy_vote_round()
         self._notify()
 
     def _cancel_democracy_timer(self):
@@ -909,6 +1379,8 @@ class SetupTestService:
         self._democracy_timer.start()
 
     def _democracy_timer_step(self):
+        winner_input = None
+        notify = False
         with self._lock:
             if not self.state.democracy_timer_running:
                 return
@@ -917,40 +1389,44 @@ class SetupTestService:
             if dem_time >= 0:
                 self.state.democracy_countdown_label = self._format_democracy_countdown(dem_time)
                 self.program.setupTest.reduceDemocracyCount()
-                self._notify()
                 self._schedule_democracy_tick()
-                return
-
-            minutes = self.state.democracy_minutes
-            seconds = self.state.democracy_seconds
-            total = (minutes * 60) + seconds
-            self.program.setupTest.setMetaDemTime(total)
-            self.program.setupTest.resetVoteList()
-            winner_text = self.state.vote_slots[0].input_text
-            if winner_text and winner_text != "empty":
-                try:
-                    winner = Input(winner_text, self.program.setupTest)
-                    self.program.setupTest.metaCommand(winner)
-                except Exception:
-                    pass
-            self._reset_dem_votes(ran_out=True)
-            self.state.democracy_queue.clear()
-            self.state.democracy_countdown_label = self._format_democracy_countdown(total)
-        self._notify()
-        self._schedule_democracy_tick()
+                notify = True
+            else:
+                minutes = self.state.democracy_minutes
+                seconds = self.state.democracy_seconds
+                total = (minutes * 60) + seconds
+                self.program.setupTest.setMetaDemTime(total)
+                self.program.setupTest.resetVoteList()
+                winner_text = self.state.vote_slots[0].input_text
+                if winner_text and winner_text != "empty":
+                    winner_input = winner_text
+                self._reset_dem_votes(ran_out=True)
+                self._clear_democracy_chat()
+                self.state.democracy_countdown_label = self._format_democracy_countdown(total)
+                self.program.setupTest.setLastDemocracyItem(None)
+                self._schedule_democracy_tick()
+                notify = True
+        if winner_input:
+            try:
+                winner = InputSequence(winner_input, self.program.setupTest)
+                self.program.setupTest.metaCommand(winner)
+            except Exception:
+                pass
+        if notify:
+            self._notify()
 
     def _reset_dem_votes(self, ran_out: bool):
         if ran_out:
             winner = self.state.vote_slots[0].input_text
             self.program.setupTest.setLastDemocracyWinner(winner)
             self.state.latest_winner = winner
-        self.state.vote_slots = [VoteSlot() for _ in range(4)]
+        self.state.vote_slots = [VoteSlot() for _ in range(DEMOCRACY_LEADER_SLOTS)]
 
     def _update_vote_slots_from_list(self):
         vote_list = self.program.setupTest.getVoteList()
         sorted_inputs = sorted(vote_list, key=lambda key: vote_list[key], reverse=True)
-        slots = [VoteSlot() for _ in range(4)]
-        for index, input_text in enumerate(sorted_inputs[:4]):
+        slots = [VoteSlot() for _ in range(DEMOCRACY_LEADER_SLOTS)]
+        for index, input_text in enumerate(sorted_inputs[:DEMOCRACY_LEADER_SLOTS]):
             slots[index] = VoteSlot(input_text=input_text, votes=vote_list[input_text])
         self.state.vote_slots = slots
 
@@ -962,7 +1438,9 @@ class SetupTestService:
                     continue
                 if not self.program.setupTest.getAnarchyThreadStatus():
                     continue
-                if self.program.setupTest.getMetaGov() != "anarchy":
+                if self.program.setupTest.getMetaGov() not in ("anarchy", CHAT_DECIDES_MODE):
+                    continue
+                if self._effective_government() != "anarchy":
                     continue
                 with self._lock:
                     if self.state.manual_setup_active:
@@ -974,14 +1452,14 @@ class SetupTestService:
                     text = self.state.anarchy_queue[0]
                     self.program.setupTest.setAnarchyThreadStatus(False)
                 try:
-                    input_obj = Input(text, self.program.setupTest)
+                    command = InputSequence(text, self.program.setupTest)
                 except ValueError:
                     with self._lock:
                         if self.state.anarchy_queue and self.state.anarchy_queue[0] == text:
                             self.state.anarchy_queue.pop(0)
                         self.program.setupTest.setAnarchyThreadStatus(True)
                     continue
-                self.program.setupTest.metaCommand(input_obj)
+                self.program.setupTest.metaCommand(command)
                 with self._lock:
                     if self.state.anarchy_queue and self.state.anarchy_queue[0] == text:
                         self.state.anarchy_queue.pop(0)
@@ -997,29 +1475,39 @@ class SetupTestService:
     def _run_democracy_thread(self):
         while True:
             try:
-                time.sleep(0.05)
                 if not self.program.setupTest.getDemocracyThreadStatus():
+                    time.sleep(0.05)
                     continue
-                if self.program.setupTest.getMetaGov() != "democracy":
+                if self.program.setupTest.getMetaGov() not in ("democracy", CHAT_DECIDES_MODE):
+                    time.sleep(0.05)
+                    continue
+                if self._effective_government() != "democracy":
+                    time.sleep(0.05)
                     continue
                 if not self.state.democracy_timer_running:
+                    time.sleep(0.05)
                     continue
-                with self._lock:
-                    if not self.state.democracy_queue:
-                        continue
-                    text = self.state.democracy_queue[0]
-                    last = self.program.setupTest.getLastDemocracyItem()
-                    if text == last:
-                        continue
-                    self.program.setupTest.setLastDemocracyItem(text)
-                self.program.setupTest.adjustVoteList(text)
-                with self._lock:
-                    self._update_vote_slots_from_list()
-                self._notify()
-            except Exception:
-                continue
+
+                processed_any = False
+                while True:
+                    with self._lock:
+                        if not self._pending_democracy_votes:
+                            break
+                        _serial, text = self._pending_democracy_votes.popleft()
+                        processed_any = True
+                    self.program.setupTest.adjustVoteList(text)
+                    with self._lock:
+                        self._update_vote_slots_from_list()
+                if processed_any:
+                    self._notify()
+                else:
+                    time.sleep(0.01)
+            except Exception as error:
+                logger.exception("Democracy thread error: %s", error)
+                time.sleep(0.05)
 
     def shutdown(self):
         self.cancel_manual_setup()
         self._countdown_runner.cancel()
         self._cancel_democracy_timer()
+        self._cancel_chat_decides_prune_timer()

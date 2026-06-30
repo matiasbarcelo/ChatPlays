@@ -26,6 +26,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
+  startFakeChatRoll: (count = 0) =>
+    apiFetch("/api/setup/fake-chat-roll", {
+      method: "POST",
+      body: JSON.stringify({ count }),
+    }),
+  stopFakeChatRoll: () =>
+    apiFetch("/api/setup/fake-chat-roll/stop", { method: "POST" }),
   controllerButton: (button) =>
     apiFetch("/api/setup/controller-button", {
       method: "POST",
@@ -75,6 +82,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  verifyUsername: (username, platform = "twitch") => {
+    const params = new URLSearchParams({ username, platform });
+    return apiFetch(`/api/main/verify-username?${params}`);
+  },
 };
 
 export function connectStateSocket(onMessage) {

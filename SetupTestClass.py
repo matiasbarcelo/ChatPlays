@@ -1,6 +1,7 @@
 import Controller
 import logging
-from input import Input
+import time
+from input import Input, InputSequence
 import json
 
 class SetupTestClass():
@@ -16,6 +17,14 @@ class SetupTestClass():
         self.controller = Controller.GBAController()
         self.maxRepeatAmount = data.get('maxRepeatAmount', 9)
         self.maxTimeLength = data.get('maxTimeLength', 15)
+        self.allowCustomInputDuration = data.get('allowCustomInputDuration', False)
+        self.allowTimingPrefixes = data.get('allowTimingPrefixes', True)
+        self.allowInputRepeat = data.get('allowInputRepeat', True)
+        self.allowInputSequences = data.get('allowInputSequences', False)
+        self.maxInputSequenceLength = data.get('maxInputSequenceLength', 3)
+        self.timingTapEnabled = data.get('timingTapEnabled', True)
+        self.timingPressEnabled = data.get('timingPressEnabled', True)
+        self.timingHoldEnabled = data.get('timingHoldEnabled', True)
         
         self.metaMode = data.get('metaMode', 'setup')
         self.government = data.get('government', 'anarchy')
@@ -66,39 +75,33 @@ class SetupTestClass():
         elif controller == 'PlayStation':
             self.controller = Controller.PlayStationController()
 
-    def metaCommand(self, inputObj):
-        logging.debug(f' metaCommand() recieved {inputObj}')
+    def getDurationForInput(self, inputObj):
+        if inputObj.getDurationSeconds() is not None:
+            return float(inputObj.getDurationSeconds())
+        if inputObj.getTimeLength():
+            return self.getTimeLengthForStr(inputObj.getTimeLength())
+        return self.getDefualtTimeLength()
 
-        if inputObj.getTimeLength() and inputObj.getRepeatAmount():
-            logging.debug(
-                f' metaCommand() fired, timeLength = {inputObj.getTimeLength()} repeatAmount = {inputObj.getRepeatAmount()}'
-            )
-            self.controller.pressButton(
-                inputObj.getInput(),
-                self.getTimeLengthForStr(inputObj.getTimeLength()),
-                inputObj.getRepeatAmount(),
-            )
-        elif inputObj.getTimeLength():
-            testForTimeLength = self.getTimeLengthForStr(inputObj.getTimeLength())
-            logging.debug(
-                f' metaCommand() fired, timeLength = {inputObj.getTimeLength()} repeatAmount = None, testForTimeLength = {testForTimeLength}'
-            )
-            self.controller.pressButton(
-                inputObj.getInput(),
-                self.getTimeLengthForStr(inputObj.getTimeLength()),
-            )
-        elif inputObj.getRepeatAmount():
-            logging.debug(
-                f' metaCommand() fired, timeLength = default repeatAmount = {inputObj.getRepeatAmount()}'
-            )
-            self.controller.pressButton(
-                inputObj.getInput(),
-                self.getDefualtTimeLength(),
-                inputObj.getRepeatAmount(),
-            )
-        else:
-            logging.debug(f' metaCommand() fired, timeLength = default repeatAmount = None')
-            self.controller.pressButton(inputObj.getInput(), self.defaultTimeLength)
+    def metaCommand(self, inputObj):
+        if isinstance(inputObj, InputSequence):
+            for part in inputObj.getInputs():
+                self.metaCommand(part)
+            return
+
+        logging.debug(f' metaCommand() recieved {inputObj}')
+        duration = self.getDurationForInput(inputObj)
+        repeat = inputObj.getRepeatAmount()
+        logging.debug(
+            f' metaCommand() fired, input = {inputObj.getInput()}, duration = {duration}, repeatAmount = {repeat}'
+        )
+        if inputObj.isWait():
+            time.sleep(duration)
+            return
+        self.controller.pressButton(
+            inputObj.getInput(),
+            duration,
+            repeat,
+        )
 
 
     def adjustVoteList(self, text):
@@ -167,6 +170,11 @@ class SetupTestClass():
         self.lastDemocracyWinner = command
 
     def setDefaultTimeLength(self, timeLength):
+        if not self.isTimingModeEnabled(timeLength):
+            enabled = self.getEnabledTimingModes()
+            if not enabled:
+                return
+            timeLength = enabled[0]
         if timeLength == 'tap':
             self.defaultTimeLength = self.tapTime
             
@@ -190,6 +198,33 @@ class SetupTestClass():
 
     def setMaxRepeatAmount(self, n):
         self.maxRepeatAmount = n
+
+    def setMaxTimeLength(self, value):
+        self.maxTimeLength = max(1, min(int(value), 99))
+
+    def setAllowCustomInputDuration(self, allowed):
+        self.allowCustomInputDuration = bool(allowed)
+
+    def setAllowTimingPrefixes(self, allowed):
+        self.allowTimingPrefixes = bool(allowed)
+
+    def setAllowInputRepeat(self, allowed):
+        self.allowInputRepeat = bool(allowed)
+
+    def setAllowInputSequences(self, allowed):
+        self.allowInputSequences = bool(allowed)
+
+    def setMaxInputSequenceLength(self, value):
+        self.maxInputSequenceLength = max(1, min(int(value), 10))
+
+    def setTimingTapEnabled(self, allowed):
+        self.timingTapEnabled = bool(allowed)
+
+    def setTimingPressEnabled(self, allowed):
+        self.timingPressEnabled = bool(allowed)
+
+    def setTimingHoldEnabled(self, allowed):
+        self.timingHoldEnabled = bool(allowed)
 
     # get functions
 
@@ -258,6 +293,40 @@ class SetupTestClass():
     
     def getMaxTimeLength(self):
         return self.maxTimeLength
+
+    def getAllowCustomInputDuration(self):
+        return self.allowCustomInputDuration
+
+    def getAllowTimingPrefixes(self):
+        return self.allowTimingPrefixes
+
+    def getAllowInputRepeat(self):
+        return self.allowInputRepeat
+
+    def getAllowInputSequences(self):
+        return self.allowInputSequences
+
+    def getMaxInputSequenceLength(self):
+        return self.maxInputSequenceLength
+
+    def isTimingModeEnabled(self, mode):
+        if mode == 'tap':
+            return self.timingTapEnabled
+        if mode == 'press':
+            return self.timingPressEnabled
+        if mode == 'hold':
+            return self.timingHoldEnabled
+        return False
+
+    def getEnabledTimingModes(self):
+        modes = []
+        if self.timingTapEnabled:
+            modes.append('tap')
+        if self.timingPressEnabled:
+            modes.append('press')
+        if self.timingHoldEnabled:
+            modes.append('hold')
+        return modes
     
 if __name__ == '__main__':
     test = SetupTestClass()

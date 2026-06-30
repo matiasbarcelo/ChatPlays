@@ -1,20 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useChatPlaysState } from "./hooks/useChatPlaysState";
 import { ControllerPanel } from "./components/ControllerPanel";
 
 function LiveQueue({ items }) {
-  const listRef = useRef(null);
-
-  useEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-    requestAnimationFrame(() => {
-      list.scrollTop = list.scrollHeight;
-    });
-  }, [items]);
-
   return (
-    <ul ref={listRef} className="monitor-queue">
+    <ul className="monitor-queue">
       {items.map((item, i) => (
         <li key={`${item}-${i}`}>{item}</li>
       ))}
@@ -60,9 +50,18 @@ export function MonitorApp() {
   const queue =
     setup.government === "anarchy"
       ? setup.anarchy_queue ?? []
-      : setup.democracy_queue ?? [];
+      : setup.government === "chat_decides"
+        ? (setup.chat_decides_active_gov === "democracy"
+            ? setup.democracy_queue
+            : setup.anarchy_queue) ?? []
+        : setup.democracy_queue ?? [];
 
-  const govLabel = setup.government === "anarchy" ? "Anarchy" : "Democracy";
+  const govLabel =
+    setup.government === "chat_decides"
+      ? `Chat Decides (${setup.chat_decides_active_gov === "democracy" ? "Democracy" : "Anarchy"})`
+      : setup.government === "anarchy"
+        ? "Anarchy"
+        : "Democracy";
 
   return (
     <div className="monitor-shell">

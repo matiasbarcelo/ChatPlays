@@ -8,6 +8,7 @@ import { openSetupWindow } from "./openSetupWindow";
 import { KeyBindTable } from "./SetupApp";
 import { InfoIcon } from "./components/InfoIcon";
 import { EmulatorDetectField } from "./components/EmulatorDetectField";
+import { UsernameField } from "./components/UsernameField";
 
 function TwitchIcon({ size = 18 }) {
   return (
@@ -17,6 +18,24 @@ function TwitchIcon({ size = 18 }) {
       <rect x="16" y="7" width="2.5" height="6" rx="1"/>
     </svg>
   );
+}
+
+function govToSlider(government) {
+  if (government === "democracy") return 0;
+  if (government === "chat_decides") return 50;
+  return 100;
+}
+
+function sliderToGov(value) {
+  if (value <= 25) return "democracy";
+  if (value >= 75) return "anarchy";
+  return "chat_decides";
+}
+
+function governmentLabel(government) {
+  if (government === "democracy") return "Democracy";
+  if (government === "chat_decides") return "Chat Decides";
+  return "Anarchy";
 }
 
 export function MainApp() {
@@ -84,10 +103,18 @@ export function MainApp() {
 
       <label className="col main-field">
         <span className="main-field-label">Username</span>
-        <input
-          defaultValue={main.twitch_username}
-          placeholder="Username"
-          onBlur={(e) => api.updateMainSettings({ twitch_username: e.target.value })}
+        <UsernameField
+          value={main.twitch_username}
+          verified={main.twitch_username_verified}
+          displayName={main.twitch_display_name}
+          platform={main.streaming_platform || "twitch"}
+          onSave={(username, isVerified, displayName) =>
+            api.updateMainSettings({
+              twitch_username: username,
+              twitch_username_verified: isVerified,
+              twitch_display_name: displayName || "",
+            })
+          }
         />
       </label>
 
@@ -129,7 +156,7 @@ export function MainApp() {
 
       <div className="main-field">
         <span className="main-field-label main-field-label--center">
-          {gov === "anarchy" ? "Anarchy" : "Democracy"}
+          {governmentLabel(gov)}
         </span>
         <div className="main-gov-row">
           <img src={democracyLogo} alt="Democracy" className="main-gov-icon main-gov-icon--democracy" />
@@ -138,11 +165,10 @@ export function MainApp() {
             className="main-gov-slider"
             min={0}
             max={100}
-            step={100}
-            value={gov === "anarchy" ? 100 : 0}
+            step={50}
+            value={govToSlider(gov)}
             onChange={(e) => {
-              const next = Number(e.target.value) === 100 ? "anarchy" : "democracy";
-              api.updateMainSettings({ government: next });
+              api.updateMainSettings({ government: sliderToGov(Number(e.target.value)) });
             }}
           />
           <img src={anarchyLogo} alt="Anarchy" className="main-gov-icon" />
