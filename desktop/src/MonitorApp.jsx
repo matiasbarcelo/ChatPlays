@@ -10,7 +10,7 @@ import {
   CHAT_OVERLAY_SIZE,
 } from "./overlayLinks";
 
-/** Copy button for a browser source, sat on a section header row. */
+/** Copy button for a prod browser source, sat on a section header row. */
 function OverlayLink({ url, size }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -99,7 +99,7 @@ export function MonitorApp() {
     <div className="monitor-shell">
       <div className="monitor-section-header">
         <span>{govLabel} — Live Chat</span>
-        <OverlayLink url={chatOverlayUrl()} size={CHAT_OVERLAY_SIZE} />
+        <OverlayLink url={chatOverlayUrl("prod")} size={CHAT_OVERLAY_SIZE} />
       </div>
       <LiveQueue items={queue} />
 
@@ -108,7 +108,7 @@ export function MonitorApp() {
       <div className="monitor-section-header">
         <span>Controller</span>
         <OverlayLink
-          url={controllerOverlayUrl()}
+          url={controllerOverlayUrl("prod")}
           size={`${controllerCanvas.width} x ${controllerCanvas.height}`}
         />
       </div>

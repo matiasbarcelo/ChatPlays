@@ -112,7 +112,7 @@ function createSetupWindow() {
     height: 960,
     minWidth: 900,
     minHeight: 820,
-    title: "Setup/Test ChatPlays Program",
+    title: "Setup / Test (dev)",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -135,7 +135,7 @@ function createMonitorWindow() {
     height: 680,
     minWidth: 420,
     minHeight: 500,
-    title: "Chat Monitor",
+    title: "Chat Monitor (prod)",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

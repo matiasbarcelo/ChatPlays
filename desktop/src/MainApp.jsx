@@ -76,7 +76,7 @@ export function MainApp() {
 
   const isOn = main.program_status;
   const gov = main.government || "anarchy";
-  const overlayUrl = chatOverlayUrl();
+  const overlayUrl = chatOverlayUrl("prod");
 
   const copyUrl = () => {
     navigator.clipboard.writeText(overlayUrl).then(() => {
@@ -205,13 +205,13 @@ export function MainApp() {
                 }
               }}
             >
-              <span className="main-overlay-btn__text">Chat Monitor</span>
+              <span className="main-overlay-btn__text">Chat Monitor (prod)</span>
               <span className="icon main-overlay-btn__icon">monitor</span>
             </button>
-            <InfoIcon tip="Live view of the running chat — separate from the Setup/Test window" />
+            <InfoIcon tip="Live view of what is on stream (prod) — separate from the Setup / Test (dev) window" />
 
             <button type="button" className="main-overlay-btn" onClick={() => openSetupWindow()}>
-              <span className="main-overlay-btn__text">Setup / Test</span>
+              <span className="main-overlay-btn__text">Setup / Test (dev)</span>
               <span className="icon main-overlay-btn__icon">open_in_new</span>
             </button>
             <InfoIcon tip="Configure inputs and test things out while the app is running" />

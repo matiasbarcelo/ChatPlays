@@ -2017,7 +2017,7 @@ input:disabled {
   padding: 1px 0;
 }
 
-/* Browser-source link, right-aligned on its section header row. */
+/* Prod browser-source link, right-aligned on its section header row. */
 .monitor-obs-btn {
   flex-shrink: 0;
   display: inline-flex;

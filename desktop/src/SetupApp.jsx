@@ -158,8 +158,9 @@ export function KeyBindTable({
 }
 
 const IS_WIN = /win/i.test(navigator.platform);
-const OVERLAY_URL = chatOverlayUrl();
-const CONTROLLER_OVERLAY_URL = controllerOverlayUrl();
+// This window is the dev environment.
+const OVERLAY_URL = chatOverlayUrl("dev");
+const CONTROLLER_OVERLAY_URL = controllerOverlayUrl("dev");
 
 function getAvailableChatInputs(buttonMap, disabledInputs = [], government = "anarchy") {
   const disabled = new Set(disabledInputs);
@@ -461,7 +462,7 @@ export function SetupApp() {
           <button type="button" className="setup-back-btn" onClick={() => closeSetupWindow()}>
             ← Back
           </button>
-          <span className="setup-topbar__title muted">Setup / Test</span>
+          <span className="setup-topbar__title muted">Setup / Test (dev)</span>
           <button type="button" onClick={() => setSettingsOpen(true)}>
             Settings
           </button>
