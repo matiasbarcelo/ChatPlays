@@ -2,11 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { useChatPlaysState } from "./hooks/useChatPlaysState";
 import { ControllerPanel } from "./components/ControllerPanel";
+import { CONTROLLER_LAYOUTS } from "./components/controllerLayouts";
 import { InfoIcon } from "./components/InfoIcon";
 import { VirtualInputCombobox } from "./components/VirtualInputCombobox";
 import { AnarchyPanel, DemocracyPanel, ChatDecidesPanel } from "./components/GovPanels";
 import { EmulatorDetectField } from "./components/EmulatorDetectField";
 import { closeSetupWindow } from "./openSetupWindow";
+import {
+  chatOverlayUrl,
+  controllerOverlayUrl,
+  overlayTitle,
+  CHAT_OVERLAY_SIZE,
+} from "./overlayLinks";
 
 const VIGEM_BUS_DOCS_URL = "https://github.com/ViGEm/ViGEmBus";
 
@@ -151,8 +158,8 @@ export function KeyBindTable({
 }
 
 const IS_WIN = /win/i.test(navigator.platform);
-const COMMANDS_LIST_URL = "http://127.0.0.1:8765/commands";
-const OVERLAY_URL = "http://127.0.0.1:8765/overlay";
+const OVERLAY_URL = chatOverlayUrl();
+const CONTROLLER_OVERLAY_URL = controllerOverlayUrl();
 
 function getAvailableChatInputs(buttonMap, disabledInputs = [], government = "anarchy") {
   const disabled = new Set(disabledInputs);
@@ -349,7 +356,8 @@ function SetupControllerFooter({
     chatDecidesSwitchThreshold,
     chatDecidesVoteTtlMinutes,
   });
-  const urlLabel = `${COMMANDS_LIST_URL.replace("http://", "").slice(0, 18)}…`;
+  const controllerLayout = CONTROLLER_LAYOUTS[controller] || CONTROLLER_LAYOUTS.GBA;
+  const { width: obsWidth, height: obsHeight } = controllerLayout.canvas;
 
   return (
     <div className="setup-controller-footer">
@@ -367,10 +375,12 @@ function SetupControllerFooter({
       <button
         type="button"
         className="main-overlay-btn"
-        title={COMMANDS_LIST_URL}
-        onClick={() => copyToClipboard(COMMANDS_LIST_URL, setCopiedUrl)}
+        title={overlayTitle(CONTROLLER_OVERLAY_URL, `${obsWidth} x ${obsHeight}`)}
+        onClick={() => copyToClipboard(CONTROLLER_OVERLAY_URL, setCopiedUrl)}
       >
-        <span className="main-overlay-btn__text">{urlLabel}</span>
+        <span className="main-overlay-btn__text">
+          {copiedUrl ? "Copied!" : `Browser source (${obsWidth}x${obsHeight})`}
+        </span>
         <span className="icon main-overlay-btn__icon">
           {copiedUrl ? "check" : "content_copy"}
         </span>
@@ -384,6 +394,7 @@ export function SetupApp() {
   const [demMinutes, setDemMinutes] = useState(null);
   const [demSeconds, setDemSeconds] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [copiedChatOverlay, setCopiedChatOverlay] = useState(false);
   const [linkFlash, setLinkFlash] = useState("");
   const [emulatorScanning, setEmulatorScanning] = useState(false);
   const [chatTheme, setChatTheme] = useState("dark");
@@ -439,11 +450,9 @@ export function SetupApp() {
     main?.twitch_username_verified && main?.twitch_display_name?.trim()
       ? main.twitch_display_name.trim()
       : "";
-  const autoLinkAvailable = setup.automatic_link_available ?? false;
-  const linkMode =
-    setup.setup_link_mode === "automatic" && autoLinkAvailable
-      ? "automatic"
-      : "manual";
+  // Automatic linking of the virtual controller to VisualBoyAdvance is not
+  // solved yet, so the control is locked to Manual until it is.
+  const linkMode = "manual";
 
   return (
     <div className="setup-shell panel">
@@ -461,13 +470,17 @@ export function SetupApp() {
           <button
             type="button"
             className="main-overlay-btn setup-obs-link-btn"
-            title={OVERLAY_URL}
-            disabled
+            title={overlayTitle(OVERLAY_URL, CHAT_OVERLAY_SIZE)}
+            onClick={() => copyToClipboard(OVERLAY_URL, setCopiedChatOverlay)}
           >
             <span className="main-overlay-btn__text">
-              {OVERLAY_URL.replace("http://", "").slice(0, 15) + "…"}
+              {copiedChatOverlay
+                ? "Copied!"
+                : OVERLAY_URL.replace("http://", "").slice(0, 15) + "…"}
             </span>
-            <span className="icon main-overlay-btn__icon">content_copy</span>
+            <span className="icon main-overlay-btn__icon">
+              {copiedChatOverlay ? "check" : "content_copy"}
+            </span>
           </button>
         </div>
       </header>
@@ -494,15 +507,12 @@ export function SetupApp() {
             <label className="col">
               Controller link
               <select
-                value={linkMode}
-                onChange={(event) =>
-                  pushSettings({ setup_link_mode: event.target.value })
-                }
+                value="manual"
+                disabled
+                title="Automatic linking is not supported yet — link the controller manually."
+                onChange={() => {}}
               >
                 <option value="manual">Manual</option>
-                <option value="automatic" disabled={!autoLinkAvailable}>
-                  Automatic
-                </option>
               </select>
             </label>
 
@@ -798,6 +808,9 @@ export function SetupApp() {
             }
             disabledInputs={setup.disabled_inputs || []}
             onButtonPress={(inputName) => api.controllerButton(inputName)}
+            executingInput={setup.executing_button || ""}
+            executingSeq={setup.executing_button_seq || 0}
+            executingDuration={setup.executing_button_duration || 0}
           />
         <SetupControllerFooter
           buttonMap={setup.button_map}

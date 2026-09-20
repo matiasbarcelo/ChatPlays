@@ -4,12 +4,15 @@ import asyncio
 import json
 import logging
 import time
+from pathlib import Path
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Set
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from setup_test_service import SetupTestService, SetupTestState, VoteSlot
@@ -33,6 +36,11 @@ logger = logging.getLogger(__name__)
 
 API_HOST = "127.0.0.1"
 API_PORT = 8765
+
+# OBS browser sources point at this server rather than at the Vite dev server,
+# so the URL a streamer copies keeps working in a packaged build too.
+VITE_DEV_URL = "http://127.0.0.1:5173"
+FRONTEND_DIST = Path(__file__).resolve().parent / "desktop" / "dist"
 
 
 def state_to_dict(state: SetupTestState) -> dict:
@@ -334,6 +342,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+if (FRONTEND_DIST / "assets").is_dir():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(FRONTEND_DIST / "assets")),
+        name="frontend-assets",
+    )
+
+
+def _serve_frontend_page(page: str, request: Request):
+    """Serve a built page, or fall back to the Vite dev server while developing.
+
+    The query string is carried through the redirect: overlay pages read
+    ?env=, ?theme= and ?user= from it, and dropping it would make those
+    options silently stop working in dev but not in a packaged build.
+    """
+    built = FRONTEND_DIST / page
+    if built.is_file():
+        return FileResponse(built)
+    query = request.url.query
+    target = f"{VITE_DEV_URL}/{page}"
+    if query:
+        target = f"{target}?{query}"
+    return RedirectResponse(target)
+
+
+@app.get("/controller")
+def controller_overlay(request: Request):
+    return _serve_frontend_page("controller.html", request)
+
+
+@app.get("/overlay")
+def chat_overlay(request: Request):
+    return _serve_frontend_page("chat.html", request)
 
 
 @app.on_event("startup")

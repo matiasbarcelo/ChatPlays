@@ -31,6 +31,7 @@ class SetupTestClass():
         self.testTime = data.get('testTime', 5)
         self.countdown = data.get('countdown', 5)
         self.voteList = {}
+        self.inputObserver = None
 
         # This is a Qt item, this serves the purpose of not letting SetupTestDriver.democracyThread run up the vote infinitely
         self.lastDemocracyItem = data.get('lastDemocracyItem', None)
@@ -66,6 +67,19 @@ class SetupTestClass():
     Finish this
     """
 
+    def setInputObserver(self, callback):
+        """Called with (inputName, duration, repeat) as each input fires, and with
+        (None, 0, 0) once it finishes. Drives the live controller animation."""
+        self.inputObserver = callback
+
+    def _reportInput(self, inputName, duration, repeat):
+        if self.inputObserver is None:
+            return
+        try:
+            self.inputObserver(inputName, duration, repeat)
+        except Exception:
+            logging.exception("Input observer failed")
+
     def changeController(self, controller):
         del self.controller
         if controller == 'GBA':
@@ -97,11 +111,15 @@ class SetupTestClass():
         if inputObj.isWait():
             time.sleep(duration)
             return
-        self.controller.pressButton(
-            inputObj.getInput(),
-            duration,
-            repeat,
-        )
+        self._reportInput(inputObj.getInput(), duration, repeat)
+        try:
+            self.controller.pressButton(
+                inputObj.getInput(),
+                duration,
+                repeat,
+            )
+        finally:
+            self._reportInput(None, 0, 0)
 
 
     def adjustVoteList(self, text):

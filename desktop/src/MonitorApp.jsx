@@ -1,6 +1,34 @@
 import { useEffect, useState } from "react";
 import { useChatPlaysState } from "./hooks/useChatPlaysState";
 import { ControllerPanel } from "./components/ControllerPanel";
+import { CONTROLLER_LAYOUTS } from "./components/controllerLayouts";
+import {
+  chatOverlayUrl,
+  controllerOverlayUrl,
+  overlayTitle,
+  copyOverlayUrl,
+  CHAT_OVERLAY_SIZE,
+} from "./overlayLinks";
+
+/** Copy button for a browser source, sat on a section header row. */
+function OverlayLink({ url, size }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="monitor-obs-btn"
+      title={overlayTitle(url, size)}
+      onClick={() => copyOverlayUrl(url, setCopied)}
+    >
+      <span className="monitor-obs-btn__text">
+        {copied ? "Copied!" : `Browser source (${size.replace(/ /g, "")})`}
+      </span>
+      <span className="icon monitor-obs-btn__icon">
+        {copied ? "check" : "content_copy"}
+      </span>
+    </button>
+  );
+}
 
 function LiveQueue({ items }) {
   return (
@@ -56,6 +84,10 @@ export function MonitorApp() {
             : setup.anarchy_queue) ?? []
         : setup.democracy_queue ?? [];
 
+  const controllerCanvas = (
+    CONTROLLER_LAYOUTS[setup.controller] || CONTROLLER_LAYOUTS.GBA
+  ).canvas;
+
   const govLabel =
     setup.government === "chat_decides"
       ? `Chat Decides (${setup.chat_decides_active_gov === "democracy" ? "Democracy" : "Anarchy"})`
@@ -65,12 +97,21 @@ export function MonitorApp() {
 
   return (
     <div className="monitor-shell">
-      <div className="monitor-section-header">{govLabel} — Live Chat</div>
+      <div className="monitor-section-header">
+        <span>{govLabel} — Live Chat</span>
+        <OverlayLink url={chatOverlayUrl()} size={CHAT_OVERLAY_SIZE} />
+      </div>
       <LiveQueue items={queue} />
 
       <div className="monitor-divider" />
 
-      <div className="monitor-section-header">Controller</div>
+      <div className="monitor-section-header">
+        <span>Controller</span>
+        <OverlayLink
+          url={controllerOverlayUrl()}
+          size={`${controllerCanvas.width} x ${controllerCanvas.height}`}
+        />
+      </div>
       <div className="monitor-controller-stage">
         <div style={{ position: "relative", display: "inline-block" }}>
           <ControllerPanel
@@ -81,6 +122,9 @@ export function MonitorApp() {
             }
             disabledInputs={setup.disabled_inputs || []}
             onButtonPress={() => {}}
+            executingInput={setup.executing_button || ""}
+            executingSeq={setup.executing_button_seq || 0}
+            executingDuration={setup.executing_button_duration || 0}
           />
           <div style={{
             position: "absolute",

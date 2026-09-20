@@ -66,6 +66,10 @@ class VoteSlot:
     votes: int = 0
 
 
+# Matches the inter-press wait in Controller.pressButton.
+REPEAT_GAP_SECONDS = 0.1
+
+
 @dataclass
 class SetupTestState:
     meta_mode: str = "setup"
@@ -115,6 +119,10 @@ class SetupTestState:
     setup_countdown_line: str = ""
     setup_countdown_active: bool = False
     executing_input: str = ""
+    executing_button: str = ""
+    executing_button_duration: float = 0.0
+    executing_button_repeat: int = 1
+    executing_button_seq: int = 0
     fake_chat_running: bool = False
     allow_custom_input_duration: bool = False
     max_input_duration: int = 15
@@ -145,6 +153,7 @@ class SetupTestService:
         self._manual_setup_waiting_for_key = False
         self._emulator_detection = EmulatorDetection(found=False)
         self._program_live = False
+        self.program.setupTest.setInputObserver(self._on_input_fired)
         self._sync_from_program()
         self.state.controller = self._controller_label()
         self._refresh_button_map()
@@ -204,6 +213,30 @@ class SetupTestService:
             with self._lock:
                 snapshot = copy.deepcopy(self.state)
             self.on_change(snapshot)
+
+    def _on_input_fired(self, input_name, duration, repeat):
+        """Observer for SetupTestClass.metaCommand — records the button that is
+        pressed right now so the UI and the OBS overlay can animate it."""
+        with self._lock:
+            if input_name:
+                try:
+                    repeat_count = max(1, int(repeat or 1))
+                except (TypeError, ValueError):
+                    repeat_count = 1
+                # Controller.pressButton repeats with a 0.1s gap between presses,
+                # so the highlight lasts as long as the button is really held.
+                held = (float(duration or 0) * repeat_count) + (
+                    REPEAT_GAP_SECONDS * (repeat_count - 1)
+                )
+                self.state.executing_button = input_name
+                self.state.executing_button_duration = held
+                self.state.executing_button_repeat = repeat_count
+                self.state.executing_button_seq += 1
+            else:
+                self.state.executing_button = ""
+                self.state.executing_button_duration = 0.0
+                self.state.executing_button_repeat = 1
+        self._notify()
 
     def _sync_from_program(self):
         st = self.program.setupTest

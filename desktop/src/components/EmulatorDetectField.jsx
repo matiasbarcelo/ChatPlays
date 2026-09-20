@@ -43,6 +43,8 @@ export function EmulatorDetectField({
   scanning = false,
   notDetectedMessage,
   compact = false,
+  disabled = false,
+  disabledHint,
 }) {
   const rootRef = useRef(null);
   const ignoreTriggerClickRef = useRef(false);
@@ -215,7 +217,13 @@ export function EmulatorDetectField({
   }
 
   return (
-    <div ref={rootRef} className={`window-picker${compact ? " window-picker--compact" : ""}`}>
+    <div
+      ref={rootRef}
+      className={`window-picker${compact ? " window-picker--compact" : ""}${
+        disabled ? " window-picker--disabled" : ""
+      }`}
+      title={disabled ? disabledHint || "Not in use yet." : undefined}
+    >
       {!compact ? <span className="window-picker__label">Window</span> : null}
       <div className="window-picker__row">
         <div
@@ -243,10 +251,11 @@ export function EmulatorDetectField({
             aria-haspopup="listbox"
             aria-expanded={open}
             aria-label={pickerMode === "other" ? "All application windows" : "Detected game window"}
+            disabled={disabled}
             onMouseDown={(event) => event.preventDefault()}
             onClick={(event) => {
               event.stopPropagation();
-              if (ignoreTriggerClickRef.current) {
+              if (disabled || ignoreTriggerClickRef.current) {
                 return;
               }
               setOpen((prev) => !prev);
@@ -257,7 +266,7 @@ export function EmulatorDetectField({
               ▾
             </span>
           </button>
-          {open ? (
+          {open && !disabled ? (
             <div
               className="window-picker__list"
               role="listbox"
@@ -354,7 +363,7 @@ export function EmulatorDetectField({
           title={pickerMode === "other" ? "Refresh all windows" : "Refresh window list"}
           aria-label={pickerMode === "other" ? "Refresh all windows" : "Refresh window list"}
           onClick={handleRefresh}
-          disabled={refreshing || listDisabled}
+          disabled={disabled || refreshing || listDisabled}
         >
           <span
             className={`icon window-picker__refresh-icon${
@@ -365,7 +374,9 @@ export function EmulatorDetectField({
           </span>
         </button>
       </div>
-      {hint && !compact ? <p className="window-picker__hint muted">{hint}</p> : null}
+      {!compact && (disabled ? disabledHint : hint) ? (
+        <p className="window-picker__hint muted">{disabled ? disabledHint : hint}</p>
+      ) : null}
     </div>
   );
 }

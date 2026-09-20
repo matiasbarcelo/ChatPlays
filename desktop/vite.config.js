@@ -23,10 +23,15 @@ export default defineConfig({
         main: path.resolve(__dirname, "index.html"),
         setup: path.resolve(__dirname, "setup.html"),
         monitor: path.resolve(__dirname, "monitor.html"),
+        controller: path.resolve(__dirname, "controller.html"),
+        chat: path.resolve(__dirname, "chat.html"),
       },
     },
   },
   server: {
+    // Bind IPv4 explicitly: the default resolves to ::1 only on this machine,
+    // and electron/main.js plus `wait-on` both check 127.0.0.1.
+    host: "127.0.0.1",
     port: 5173,
     strictPort: true,
     fs: {

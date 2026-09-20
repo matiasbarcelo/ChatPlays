@@ -41,6 +41,11 @@ export function GovHeader({ government, chatTheme, onThemeToggle, subtitle }) {
   );
 }
 
+/**
+ * Renders the queue in backend order. The backend already decides direction:
+ * anarchy appends (oldest first — it is a play queue), democracy prepends
+ * (newest first — latest vote on top). Do not re-sort here.
+ */
 function ChatQueue({ items, username }) {
   const displayUsername = username?.trim() || "";
 
@@ -96,15 +101,20 @@ export function AnarchyPanel({
   username,
   chatTheme = "dark",
   onThemeToggle,
+  displayOnly = false,
 }) {
   const items = countdownLine ? [countdownLine] : (flashLine ? [flashLine] : queue);
   return (
     <div className={`chat-panel${chatTheme === "light" ? " chat-panel--light" : ""}`}>
-      <GovHeader government="anarchy" chatTheme={chatTheme} onThemeToggle={onThemeToggle} />
+      <GovHeader
+        government="anarchy"
+        chatTheme={chatTheme}
+        onThemeToggle={displayOnly ? undefined : onThemeToggle}
+      />
       <div className="chat-panel__body">
         <ChatQueue items={items} username={username} />
       </div>
-      <ChatInputForm onSubmit={onSubmit} username={username} />
+      {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
     </div>
   );
 }
@@ -127,11 +137,17 @@ export function DemocracyPanel({
   onToggleTimer,
   chatTheme = "dark",
   onThemeToggle,
+  displayOnly = false,
 }) {
   return (
     <div className={`chat-panel${chatTheme === "light" ? " chat-panel--light" : ""}`}>
-      <GovHeader government="democracy" chatTheme={chatTheme} onThemeToggle={onThemeToggle} />
+      <GovHeader
+        government="democracy"
+        chatTheme={chatTheme}
+        onThemeToggle={displayOnly ? undefined : onThemeToggle}
+      />
       <div className="chat-panel__controls col">
+        {!displayOnly && (
         <div className="row pixel" style={{ justifyContent: "space-between" }}>
           <label>
             Minutes
@@ -150,13 +166,18 @@ export function DemocracyPanel({
             />
           </label>
         </div>
+        )}
         <div className="pixel chat-panel__countdown-label">{countdownLabel}</div>
-        <button type="button" onClick={onUpdateTime}>
-          Apply timer length
-        </button>
-        <button type="button" onClick={onToggleTimer}>
-          {timerRunning ? "Stop timer" : "Start timer"}
-        </button>
+        {!displayOnly && (
+          <>
+            <button type="button" onClick={onUpdateTime}>
+              Apply timer length
+            </button>
+            <button type="button" onClick={onToggleTimer}>
+              {timerRunning ? "Stop timer" : "Start timer"}
+            </button>
+          </>
+        )}
         <div className="pixel chat-panel__latest-winner">Latest Winner: {latestWinner}</div>
         <div className="card">
           {(voteSlots ?? []).map((slot, index) => (
@@ -173,7 +194,7 @@ export function DemocracyPanel({
           username={username}
         />
       </div>
-      <ChatInputForm onSubmit={onSubmit} username={username} />
+      {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
     </div>
   );
 }
@@ -264,6 +285,7 @@ export function ChatDecidesPanel({
   onToggleTimer,
   chatTheme = "dark",
   onThemeToggle,
+  displayOnly = false,
 }) {
   const activeLabel = activeGovernment === "democracy" ? "Democracy" : "Anarchy";
   const items = countdownLine ? [countdownLine] : (flashLine ? [flashLine] : queue);
@@ -274,7 +296,7 @@ export function ChatDecidesPanel({
         government="chat_decides"
         subtitle={`Active: ${activeLabel}`}
         chatTheme={chatTheme}
-        onThemeToggle={onThemeToggle}
+        onThemeToggle={displayOnly ? undefined : onThemeToggle}
       />
       <div className="chat-panel__controls col chat-decides-controls">
         <ChatDecidesBar
@@ -283,6 +305,7 @@ export function ChatDecidesPanel({
           activeGovernment={activeGovernment}
           lastVote={lastVote}
         />
+        {!displayOnly && (
         <div className="chat-decides-settings row pixel">
           <label>
             Starts with
@@ -328,6 +351,7 @@ export function ChatDecidesPanel({
             min
           </label>
         </div>
+        )}
         <div className="card chat-decides-votes">
           <div className="pixel chat-decides-votes__title">Votes</div>
           <div className="row" style={{ justifyContent: "space-between" }}>
@@ -341,6 +365,7 @@ export function ChatDecidesPanel({
         </div>
         {activeGovernment === "democracy" && (
           <>
+            {!displayOnly && (
             <div className="row pixel" style={{ justifyContent: "space-between" }}>
               <label>
                 Minutes
@@ -359,13 +384,18 @@ export function ChatDecidesPanel({
                 />
               </label>
             </div>
+            )}
             <div className="pixel chat-panel__countdown-label">{countdownLabel}</div>
-            <button type="button" onClick={onUpdateTime}>
-              Apply timer length
-            </button>
-            <button type="button" onClick={onToggleTimer}>
-              {timerRunning ? "Stop timer" : "Start timer"}
-            </button>
+            {!displayOnly && (
+              <>
+                <button type="button" onClick={onUpdateTime}>
+                  Apply timer length
+                </button>
+                <button type="button" onClick={onToggleTimer}>
+                  {timerRunning ? "Stop timer" : "Start timer"}
+                </button>
+              </>
+            )}
             <div className="pixel chat-panel__latest-winner">Latest Winner: {latestWinner}</div>
             <div className="card">
               {(voteSlots ?? []).map((slot, index) => (
@@ -381,7 +411,7 @@ export function ChatDecidesPanel({
       <div className="chat-panel__body">
         <ChatQueue items={items} username={username} />
       </div>
-      <ChatInputForm onSubmit={onSubmit} username={username} />
+      {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
     </div>
   );
 }

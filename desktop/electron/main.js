@@ -1,9 +1,14 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
 const fs = require("fs");
 
 const API_PORT = 8765;
+
+// The main view renders at a fixed 360px column; this is the content box that
+// fits it end to end so the window opens with no scrollbar.
+const MAIN_CONTENT_WIDTH = 400;
+const MAIN_CONTENT_HEIGHT = 800;
 const isDev = !app.isPackaged;
 
 let pythonProcess = null;
@@ -73,11 +78,17 @@ function loadWindow(win, page) {
 }
 
 function createMainWindow() {
+  // Never open taller than the display's work area, or the OS shrinks the
+  // window and the scrollbar comes back anyway.
+  const { height: workAreaHeight } = screen.getPrimaryDisplay().workAreaSize;
+  const contentHeight = Math.min(MAIN_CONTENT_HEIGHT, workAreaHeight);
+
   mainWindow = new BrowserWindow({
-    width: 400,
-    height: 680,
+    width: MAIN_CONTENT_WIDTH,
+    height: contentHeight,
+    useContentSize: true,
     minWidth: 360,
-    minHeight: 620,
+    minHeight: Math.min(620, contentHeight),
     title: "ChatPlays",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

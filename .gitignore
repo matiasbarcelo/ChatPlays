@@ -5,6 +5,7 @@ virt/
 
 # Node / Electron
 desktop/node_modules/
+desktop/dist/
 
 # Emulator binaries (install locally; do not commit)
 visualboyadvance-m.exe

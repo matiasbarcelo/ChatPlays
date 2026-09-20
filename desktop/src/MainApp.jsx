@@ -8,6 +8,7 @@ import { openSetupWindow } from "./openSetupWindow";
 import { KeyBindTable } from "./SetupApp";
 import { InfoIcon } from "./components/InfoIcon";
 import { EmulatorDetectField } from "./components/EmulatorDetectField";
+import { chatOverlayUrl } from "./overlayLinks";
 import { UsernameField } from "./components/UsernameField";
 
 function TwitchIcon({ size = 18 }) {
@@ -75,7 +76,7 @@ export function MainApp() {
 
   const isOn = main.program_status;
   const gov = main.government || "anarchy";
-  const overlayUrl = "http://127.0.0.1:8765/overlay";
+  const overlayUrl = chatOverlayUrl();
 
   const copyUrl = () => {
     navigator.clipboard.writeText(overlayUrl).then(() => {
@@ -119,23 +120,6 @@ export function MainApp() {
       </label>
 
       <div className="col main-field">
-        <span className="main-field-label">
-          OAuth Key
-          <InfoIcon
-            tip="Click to get your Twitch chat token at twitchtokengenerator.com (select chat:read + chat:edit)"
-            onClick={() => window.open("https://twitchtokengenerator.com/?scope=chat:read+chat:edit", "_blank")}
-          />
-        </span>
-        <input
-          type="password"
-          defaultValue={main.oauth_key}
-          placeholder="oauth:..."
-          autoComplete="off"
-          onBlur={(e) => api.updateMainSettings({ oauth_key: e.target.value })}
-        />
-      </div>
-
-      <div className="col main-field">
         <span className="main-field-label">Game/Emulator</span>
         <EmulatorDetectField
           windowOptions={main.emulator_window_options || []}
@@ -151,6 +135,8 @@ export function MainApp() {
             return result.windows || [];
           }}
           scanning={emulatorScanning}
+          disabled
+          disabledHint="Not in use yet."
         />
       </div>
 
@@ -205,7 +191,7 @@ export function MainApp() {
                 {copied ? "check" : "content_copy"}
               </span>
             </button>
-            <InfoIcon tip="Browser source URL for OBS — overlay endpoint not yet implemented" />
+            <InfoIcon tip="Browser source URL for OBS — add it in OBS and set the size to 400 x 900" />
 
             <button
               type="button"

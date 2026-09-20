@@ -1303,6 +1303,43 @@ select {
   box-shadow: 0 0 0 2px #ffe566;
 }
 
+/* Live input animation — same yellow as the setup highlight, but a press pulse.
+   Driven by executing_button / executing_button_seq from the backend. */
+.controller-hit--firing {
+  background: #fff3a0;
+  border-color: #c8a000;
+  color: #1a1a1a;
+  z-index: 3;
+  animation-name: controller-fire;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
+@keyframes controller-fire {
+  0% {
+    transform: scale(1.35);
+    background: #fffdf0;
+    box-shadow: 0 0 0 4px #ffe566, 0 0 16px 6px rgba(255, 213, 0, 0.7);
+  }
+  35% {
+    transform: scale(1.12);
+    background: #fff3a0;
+    box-shadow: 0 0 0 3px #ffe566, 0 0 10px 3px rgba(255, 213, 0, 0.5);
+  }
+  100% {
+    transform: scale(1);
+    background: #fff3a0;
+    box-shadow: 0 0 0 2px #ffe566;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .controller-hit--firing {
+    animation: none;
+    box-shadow: 0 0 0 2px #ffe566;
+  }
+}
+
 .controller-hit--disabled {
   opacity: 0.3;
   background: #d0d0d0;
@@ -1793,6 +1830,33 @@ select {
   cursor: pointer;
 }
 
+/* Locked controls (e.g. Controller link, pinned to Manual) read as greyed out. */
+select:disabled,
+input:disabled {
+  background: var(--app-btn-bg);
+  color: var(--app-muted);
+  border-color: var(--app-btn-border);
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Greyed-out picker: shown for context, but not wired to anything yet. */
+.window-picker--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.window-picker--disabled .window-picker__trigger,
+.window-picker--disabled .window-picker__refresh {
+  cursor: not-allowed;
+  background: var(--app-btn-bg);
+  color: var(--app-muted);
+}
+
+.window-picker--disabled .window-picker__icon {
+  filter: grayscale(1);
+}
+
 .window-picker__select:disabled {
   cursor: default;
 }
@@ -1858,6 +1922,50 @@ select {
   }
 }
 
+/* ── Controller browser source (OBS) ──────────────────── */
+/* :root carries the app background, so <html> has to be cleared as well or the
+   browser source renders on grey instead of an alpha channel. */
+.overlay-root,
+.overlay-root body,
+.overlay-body,
+.overlay-body #root {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden;
+}
+
+.controller-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}
+
+/* The chat overlay fills the browser source, whatever size it is set to. */
+.chat-overlay {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}
+
+.chat-overlay .chat-panel {
+  flex: 1;
+  min-height: 0;
+  border-radius: 0;
+  border: none;
+}
+
+/* Nothing in the overlay is clickable — it is a display surface. */
+.controller-overlay .controller-hit {
+  cursor: default;
+  pointer-events: none;
+}
+
 /* ── Chat Monitor ─────────────────────────────────────────────── */
 .monitor-shell {
   display: flex;
@@ -1870,7 +1978,11 @@ select {
 
 .monitor-section-header {
   flex-shrink: 0;
-  padding: 7px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 10px 5px 14px;
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -1903,6 +2015,38 @@ select {
 
 .monitor-queue li {
   padding: 1px 0;
+}
+
+/* Browser-source link, right-aligned on its section header row. */
+.monitor-obs-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  font-family: "Alte Haas Grotesk", system-ui, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--app-fg);
+  background: var(--app-btn-bg);
+  border: 1px solid var(--app-btn-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.monitor-obs-btn:hover {
+  background: var(--app-btn-hover);
+}
+
+.monitor-obs-btn__text {
+  white-space: nowrap;
+}
+
+.monitor-obs-btn__icon {
+  font-size: 13px;
+  line-height: 1;
 }
 
 .monitor-divider {
