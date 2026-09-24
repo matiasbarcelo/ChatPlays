@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<!--
+  Recreation of https://chatplays.org/ (Elementor / Hello Elementor theme)
+  from the Wayback Machine snapshot of 2024-04-19 (web.archive.org/web/20240419184130/https://chatplays.org/).
+  Content, structure, links and metadata are taken from the snapshot. The per-element Elementor CSS
+  (post-123/174/250.css) was not captured, so colors and spacing are approximations (greyscale theme, Alte Haas Grotesk).
+-->
+<html lang="en-US">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChatPlays – Chat Integrate</title>
+
+  <meta name="description" content="Get on the mailing list (you wouldn't want to miss out). What is ChatPlays? Make your own &quot;Twitch Plays&quot; on any major streaming platform! Game Types! The audience can play a game, play against their favorite live-streamer, play amongst themselves, or play against another live-stream, all by typing out inputs in the live-chat.">
+  <meta name="robots" content="max-image-preview:large">
+  <link rel="canonical" href="https://chatplays.org/">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="ChatPlays">
+  <meta property="og:description" content="Chat Integrate">
+  <meta property="og:url" content="https://chatplays.org/">
+  <meta property="og:site_name" content="ChatPlays">
+  <meta property="og:image" content="https://chatplays.org/wp-content/uploads/2022/06/Chat-plays-transparent-e1654671926779-1024x488.png">
+  <meta property="og:image:width" content="800">
+  <meta property="og:image:height" content="381">
+  <meta property="og:image:alt" content="ChatPlays logo">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:text:title" content="Home">
+  <meta name="twitter:image" content="https://chatplays.org/wp-content/uploads/2022/06/500px-TikTok_logo.svg.png?w=144">
+
+  <link rel="icon" href="images/favicon.png" sizes="32x32">
+  <link rel="icon" href="images/favicon.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="images/favicon.png">
+
+
+  <style>
+    /* Alte Haas Grotesk ships in Regular and Bold only; 500+ maps to Bold. */
+    @font-face {
+      font-family: "Alte Haas Grotesk";
+      src: url("fonts/AlteHaasGroteskRegular.ttf") format("truetype");
+      font-weight: 100 499;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Alte Haas Grotesk";
+      src: url("fonts/AlteHaasGroteskBold.ttf") format("truetype");
+      font-weight: 500 900;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    /* Site globals (greyscale theme) */
+    :root {
+      --e-global-color-primary: #b0b0b0;
+      --e-global-color-secondary: #595959;
+      --e-global-color-text: #7A7A7A;
+      --e-global-color-accent: #8a8a8a;
+      --e-global-typography-primary-font-family: "Alte Haas Grotesk", "Helvetica Neue", Arial, sans-serif;
+      --e-global-typography-secondary-font-family: "Alte Haas Grotesk", "Helvetica Neue", Arial, sans-serif;
+      --container: 1140px;
+      --dark: #1a1a1a;
+      --dark-2: #262626;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--e-global-typography-primary-font-family);
+      font-size: 1rem;
+      line-height: 1.5;
+      color: #333;
+      background: #fff;
+      -webkit-font-smoothing: antialiased;
+    }
+    img { max-width: 100%; height: auto; display: block; }
+    a { color: var(--e-global-color-primary); }
+    h1, h2, h3, h4, h5, h6 { margin: 0; line-height: 1.2; }
+
+    /* ---------- Elementor-like layout primitives ---------- */
+    .section { position: relative; }
+    .section > .overlay { position: absolute; inset: 0; pointer-events: none; }
+    .container {
+      position: relative;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      max-width: calc(var(--container) + 48px);
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    .col { position: relative; display: flex; align-items: center; min-height: 1px; }
+    .col-100 { width: 100%; }
+    .col-50 { width: 50%; }
+    .col-33 { width: 33.333%; }
+    .col-80 { width: 80%; }
+    .col-20 { width: 20%; }
+    .wrap { display: flex; flex-direction: column; justify-content: center; width: 100%; padding: 10px; gap: 20px; }
+    .inner { width: 100%; }
+    .inner .container { max-width: none; padding: 0; margin: 0 -10px; width: calc(100% + 20px); }
+
+    /* Two-column panels: generous padding, both columns centred on each other. */
+    .panel { padding: 80px 0; }
+    .panel .col-50 > .wrap { padding: 0 32px; }
+    .panel .col-50:first-child > .wrap { padding-left: 0; }
+    .panel .col-50:last-child > .wrap { padding-right: 0; }
+    .panel img.media { width: 100%; border-radius: 8px; }
+
+    .title-xl { font-size: 39px; }
+    .title-xxl { font-size: 59px; }
+    .title-large { font-size: 29px; }
+    .center { text-align: center; }
+
+    /* ---------- Header / nav (e--pointer-underline e--animation-fade) ---------- */
+    .site-header { background: var(--dark); }
+    .nav { display: flex; justify-content: center; }
+    .nav ul { display: flex; flex-wrap: wrap; justify-content: center; list-style: none; margin: 0; padding: 0; }
+    .nav a {
+      position: relative;
+      display: block;
+      padding: 13px 20px;
+      font-weight: 500;
+      color: #fff;
+      text-decoration: none;
+      transition: color .3s;
+    }
+    .nav a::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 3px;
+      background: var(--e-global-color-accent);
+      opacity: 0;
+      transition: opacity .3s;
+    }
+    .nav a:hover, .nav a.active { color: var(--e-global-color-accent); }
+    .nav a:hover::after, .nav a.active::after { opacity: 1; }
+
+    /* ---------- Buttons ---------- */
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 24px;
+      font-family: var(--e-global-typography-primary-font-family);
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1;
+      color: #fff;
+      background: var(--e-global-color-accent);
+      border: 0;
+      border-radius: 3px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: filter .2s, transform .2s;
+    }
+    .button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+    .button.justify { width: 100%; }
+    .button.size-xl { padding: 25px 50px; font-size: 20px; border-radius: 6px; }
+    .button svg { width: 1em; height: 1em; fill: currentColor; }
+
+    /* ---------- Hero / mailing list (f6b8356) ---------- */
+    .hero { background: var(--dark) center/cover no-repeat; color: #fff; }
+    .hero > .overlay { background: radial-gradient(circle at 25% 40%, rgba(255,255,255,.10), transparent 60%); }
+    .hero h2 { font-family: var(--e-global-typography-primary-font-family); font-size: 40px; font-weight: 600; }
+    .hero h4 { font-weight: 400; font-size: 20px; opacity: .8; margin-top: -8px; }
+    .hero-logo { width: 100%; max-width: 480px; margin: 0 auto; }
+
+    .form { display: flex; flex-wrap: wrap; margin: 0 -5px; }
+    .form .field-group { padding: 0 5px; }
+    .form input[type="email"] {
+      width: 100%;
+      min-height: 40px;
+      padding: 6px 12px;
+      font: inherit;
+      font-size: 15px;
+      color: #333;
+      background: #fff;
+      border: 1px solid #818a91;
+      border-radius: 3px;
+    }
+    .form .button { width: 100%; min-height: 40px; }
+    .form-note { font-size: 14px; margin: 6px 0 0; }
+    .form-note:empty { display: none; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    /* ---------- What is ChatPlays? (eed3131 / cd74a9b) ---------- */
+    .what { padding: 80px 0 24px; }
+    .video-section { padding-bottom: 80px; }
+    .video { max-width: 960px; margin: 0 auto; border-radius: 8px; overflow: hidden; }
+    .what h2 { color: var(--e-global-color-secondary); font-weight: 600; }
+    .video { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+    .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+    /* ---------- Platforms (780390a) ---------- */
+    /* Light grey so the dark-lettered YouTube/TikTok logos stay legible. */
+    .platforms { background: #ececec; color: #1a1a1a; }
+    .platforms h1 { font-family: var(--e-global-typography-secondary-font-family); font-weight: 600; }
+    .logos { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 12px; }
+    .logos img { height: 44px; width: auto; }
+    .logos img.tall { height: 56px; }
+
+    /* ---------- Game Types (146edda) ---------- */
+    .game-types { background: var(--dark); color: #fff; }
+    .game-types > .overlay { background: radial-gradient(circle at 80% 50%, rgba(255,255,255,.07), transparent 60%); }
+    .game-types h2.title-xxl { font-family: var(--e-global-typography-secondary-font-family); font-weight: 700; color: #c8c8c8; }
+    .game-types h2.title-large { font-weight: 400; line-height: 1.4; }
+
+    /* ---------- Get involved (6ca61a9) ---------- */
+    .involved { padding: 80px 0; }
+    .involved .buttons { margin-top: 12px; }
+    .involved h2 { color: var(--e-global-color-secondary); font-weight: 600; }
+
+    /* ---------- Footer (elementor-250) ---------- */
+    .site-footer { background: var(--dark); color: #c8c8c8; font-size: 14px; }
+    .site-footer { padding: 28px 0; }
+    .site-footer .wrap { gap: 12px; }
+    .site-footer p { margin: 0; }
+    .site-footer a { color: inherit; text-decoration: none; }
+    .site-footer a:hover { color: #fff; }
+    .footer-email { text-align: center; font-size: 16px; }
+
+    /* ---------- Responsive (Elementor breakpoints: tablet 1024, mobile 767) ---------- */
+    @media (max-width: 1024px) {
+      .title-xxl { font-size: 46px; }
+      .title-xl { font-size: 32px; }
+      .title-large { font-size: 24px; }
+    }
+    @media (max-width: 767px) {
+      .col-50, .col-33 { width: 100%; }
+      .form .col-80, .form .col-20 { width: 100%; }
+      .form .col-80 { margin-bottom: 10px; }
+      .panel { padding: 56px 0; }
+      .panel .col-50 > .wrap,
+      .panel .col-50:first-child > .wrap,
+      .panel .col-50:last-child > .wrap { padding: 0; }
+      .panel .col-50 + .col-50 { margin-top: 32px; }
+      .panel .col-50 > .wrap { text-align: center; }
+      .logos { justify-content: center; flex-wrap: wrap; gap: 20px; }
+      .logos img { height: 30px; }
+      .logos img.tall { height: 38px; }
+      .nav a { padding: 13px 10px; font-size: 15px; }
+      .site-header .wrap { padding: 0; }
+      .what { padding-top: 56px; }
+      .video-section { padding-bottom: 56px; }
+      .involved { padding: 56px 0; }
+      .title-xxl { font-size: 38px; }
+      .title-xl { font-size: 28px; }
+      .title-large { font-size: 20px; }
+      .hero h2 { font-size: 30px; }
+      .container { padding: 0 16px; }
+      .hero-logo { max-width: 320px; }
+      .button.size-xl { padding: 20px 30px; }
+    }
+  </style>
+</head>
+
+<body class="home page-template-default page page-id-123 elementor-default elementor-kit-62 elementor-page elementor-page-123">
+
+  <!-- Header (elementor-174) -->
+  <header class="site-header section">
+    <div class="container">
+      <div class="col col-100">
+        <div class="wrap">
+          <nav class="nav" aria-label="Main">
+            <ul>
+              <li><a href="#" class="active" aria-current="page">Home</a></li>
+              <li><a href="#get-involved">Get Involved</a></li>
+              <li><a href="https://www.paypal.com/donate/?hosted_button_id=GMMRAE3Y6TFHU">Donate</a></li>
+              <li><a href="https://docs.google.com/forms/d/e/1FAIpQLScUejEYWGvGnN2f2b4zRGxtxPtXPKO5mCVdTkQhhSta7hOp6w/viewform?vc=0&amp;c=0&amp;w=1&amp;flr=0">Survey</a></li>
+            </ul>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main id="content" class="site-main" role="main">
+
+    <!-- Hero: logo + mailing list (f6b8356) -->
+    <section class="section hero panel">
+      <div class="overlay"></div>
+      <div class="container">
+        <div class="col col-50">
+          <div class="wrap">
+                        <img src="images/chatplays-logo-light.png"
+                 data-fallback="https://web.archive.org/web/20240419184130im_/https://i0.wp.com/chatplays.org/wp-content/uploads/2022/06/Chat-plays-transparent-e1654671926779.png?w=1478&amp;ssl=1"
+                 width="800" height="381" alt="ChatPlays" class="hero-logo" fetchpriority="high">
+          </div>
+        </div>
+        <div class="col col-50">
+          <div class="wrap">
+            <h2>Get on the mailing list</h2>
+            <h4>(you wouldn't want to miss out)</h4>
+
+            <div class="inner">
+              <form class="form" id="newsletter" name="email" action="mailto:matias.e.barcelo@gmail.com?subject=ChatPlays%20mailing%20list" method="post" enctype="text/plain">
+                <div class="field-group col-80">
+                  <label for="form-field-name" class="sr-only">Subscribe to the newsletter</label>
+                  <input type="email" name="email" id="form-field-name" placeholder="Email" required aria-required="true">
+                </div>
+                <div class="field-group col-20">
+                  <button type="submit" class="button">Send</button>
+                </div>
+              </form>
+              <p class="form-note" id="form-note" role="status"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- What is ChatPlays? (eed3131) -->
+    <section class="section what">
+      <div class="container">
+        <div class="col col-100">
+          <div class="wrap">
+            <h2 class="title-xl center">What is ChatPlays?</h2>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Video (cd74a9b) -->
+    <section class="section video-section">
+      <div class="container">
+        <div class="col col-100">
+          <div class="wrap">
+            <div class="video">
+              <iframe src="https://www.youtube-nocookie.com/embed/c6WSqWQjXbA?controls=1&amp;rel=0"
+                      title="What is ChatPlays?" loading="lazy"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowfullscreen></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Platforms (780390a) -->
+    <section class="section platforms panel">
+      <div class="overlay"></div>
+      <div class="container">
+        <div class="col col-50">
+          <div class="wrap">
+            <img src="images/a14.gif"
+                 data-fallback="https://web.archive.org/web/20240419184130im_/https://i0.wp.com/chatplays.org/wp-content/uploads/2021/07/a14.gif?fit=635%2C370&amp;ssl=1"
+                 width="635" height="370" alt="ChatPlays gameplay" class="media" loading="lazy">
+          </div>
+        </div>
+        <div class="col col-50">
+          <div class="wrap">
+            <h1 class="title-xl">Make your own "Twitch Plays" on any major streaming platform!</h1>
+            <div class="logos">
+              <img src="images/twitch.png"
+                   data-fallback="https://web.archive.org/web/20240419184130im_/https://i0.wp.com/chatplays.org/wp-content/uploads/2022/06/TwitchExtrudedWordmarkPurple.png?resize=300%2C100&amp;ssl=1"
+                   width="1140" height="381" alt="Twitch" loading="lazy">
+              <img src="images/youtube.png"
+                   data-fallback="https://web.archive.org/web/20240419184130im_/https://i0.wp.com/chatplays.org/wp-content/uploads/2021/07/yt_logo_rgb_light.png?w=794&amp;ssl=1"
+                   width="794" height="178" alt="YouTube" loading="lazy">
+              <img src="images/tiktok.png" class="tall"
+                   data-fallback="https://web.archive.org/web/20240419184130im_/https://i0.wp.com/chatplays.org/wp-content/uploads/2022/06/500px-TikTok_logo.svg.png?w=500&amp;ssl=1"
+                   width="300" height="300" alt="TikTok" loading="lazy">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Game Types (146edda) -->
+    <section class="section game-types panel">
+      <div class="overlay"></div>
+      <div class="container">
+        <div class="col col-50">
+          <div class="wrap">
+            <h2 class="title-xxl">Game Types!</h2>
+            <h2 class="title-large">The audience can play a game, play against their favorite live-streamer, play amongst themselves, or play against another live-stream, all by typing out inputs in the live-chat.</h2>
+          </div>
+        </div>
+        <div class="col col-50">
+          <div class="wrap">
+            <img src="images/chat-vs.gif"
+                 data-fallback="https://web.archive.org/web/20240419184130im_/https://i0.wp.com/chatplays.org/wp-content/uploads/2021/08/Chat-vs.gif?fit=760%2C428&amp;ssl=1"
+                 width="760" height="428" alt="Chat vs. streamer" class="media" loading="lazy">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How can I get involved? (6ca61a9) -->
+    <section class="section involved" id="get-involved">
+      <div class="container">
+        <div class="col col-100">
+          <div class="wrap">
+            <h2 class="title-xl center">How can I get involved?</h2>
+            <div class="inner buttons">
+              <div class="container">
+                <div class="col col-33"><div class="wrap">
+                  <a class="button justify size-xl" href="mailto:matias.e.barcelo@gmail.com">Contact</a>
+                </div></div>
+                <div class="col col-33"><div class="wrap">
+                  <a class="button justify size-xl" href="https://www.paypal.com/donate?hosted_button_id=GMMRAE3Y6TFHU">Donate</a>
+                </div></div>
+                <div class="col col-33"><div class="wrap">
+                  <a class="button justify size-xl" href="https://forms.gle/YMRtrAC6z3Qw6AKk9">Take a Survey</a>
+                </div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer (elementor-250) -->
+  <footer class="site-footer section">
+    <div class="container">
+      <div class="col col-100">
+        <div class="wrap">
+          <p class="footer-email"><a href="mailto:matias.e.barcelo@gmail.com">matias.e.barcelo@gmail.com</a></p>
+          <p class="center"><a href="https://matiasbarcelo.com">matiasbarcelo.com</a></p>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Images live in ./images; if one is missing, fall back to the Wayback Machine copy.
+    document.querySelectorAll('img[data-fallback]').forEach(function (img) {
+      function useFallback() {
+        if (img.dataset.fellBack) return;
+        img.dataset.fellBack = '1';
+        img.src = img.dataset.fallback;
+      }
+      img.addEventListener('error', useFallback);
+      if (img.complete && img.naturalWidth === 0) useFallback();
+    });
+
+    // The original form posted to Elementor's WordPress backend; without it, hand off to the mail client.
+    document.getElementById('newsletter').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = document.getElementById('form-field-name').value.trim();
+      window.location.href = 'mailto:matias.e.barcelo@gmail.com?subject=' +
+        encodeURIComponent('ChatPlays mailing list') + '&body=' +
+        encodeURIComponent('Please add ' + email + ' to the ChatPlays mailing list.');
+      document.getElementById('form-note').textContent = 'Thanks! Your email app should open to finish signing up.';
+    });
+  </script>
+</body>
+</html>
