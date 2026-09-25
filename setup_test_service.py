@@ -19,6 +19,9 @@ DEMOCRACY_LEADER_SLOTS = 7
 CHAT_DECIDES_MODE = "chat_decides"
 GOVERNANCE_VOTE_CHOICES = ("anarchy", "democracy")
 
+# Chat panel looks, selectable in Setup/Test and mirrored by the OBS overlay.
+CHAT_THEMES = ("dark", "light")
+
 IS_MAC = platform.system() == "Darwin"
 IS_WIN = platform.system() == "Windows"
 
@@ -138,6 +141,13 @@ class SetupTestState:
     chat_decides_democracy_votes: int = 0
     chat_decides_democracy_percent: float = 50.0
     chat_decides_last_vote: str = ""
+
+    # Chat panel appearance, shared with the OBS overlay so both match exactly.
+    chat_theme: str = "dark"
+    # Scrollback buffer, not a display limit — the panel shows what fits and
+    # keeps the rest as history. This is only a memory guard so a long stream
+    # can't grow the queue without bound; the oldest line is popped off the top.
+    chat_queue_max_lines: int = 200
 
 
 class SetupTestService:
@@ -319,6 +329,23 @@ class SetupTestService:
             queue.insert(0, line)
         else:
             queue.append(line)
+        # Bounded scrollback, not a visible-line limit: drop the oldest line
+        # once the queue overflows. Oldest sits at the tail when prepending
+        # (newest first, e.g. democracy) and at the head otherwise (oldest
+        # first, e.g. anarchy's play queue), so trim whichever end that is.
+        max_lines = self.state.chat_queue_max_lines
+        if max_lines and max_lines > 0 and len(queue) > max_lines:
+            if prepend:
+                del queue[max_lines:]
+            else:
+                del queue[: len(queue) - max_lines]
+
+    def set_chat_theme(self, theme: str):
+        if theme not in CHAT_THEMES:
+            return
+        with self._lock:
+            self.state.chat_theme = theme
+        self._notify()
 
     def _clear_chat_queue(self, gov: Optional[str] = None):
         self._chat_queue(gov).clear()

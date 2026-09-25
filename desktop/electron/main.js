@@ -28,6 +28,8 @@ function pythonExecutable() {
   const root = projectRoot();
   const venvCandidates = [
     path.join(root, "virt", "Scripts", "python.exe"),
+    // MSYS/MinGW-created venvs use the POSIX layout but keep the .exe suffix
+    path.join(root, "virt", "bin", "python.exe"),
     path.join(root, "virt", "bin", "python"),
   ];
   for (const candidate of venvCandidates) {
