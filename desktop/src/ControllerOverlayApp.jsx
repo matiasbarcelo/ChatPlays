@@ -6,7 +6,7 @@ import { ControllerPanel } from "./components/ControllerPanel";
  * lighting up each input as the backend executes it.
  */
 export function ControllerOverlayApp() {
-  const { ready, setup } = useChatPlaysState("setup");
+  const { ready, setup } = useChatPlaysState("setup", { overlay: true });
 
   if (!ready || !setup) return <div className="controller-overlay" />;
 

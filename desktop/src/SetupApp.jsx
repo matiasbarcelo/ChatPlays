@@ -7,6 +7,12 @@ import { InfoIcon } from "./components/InfoIcon";
 import { VirtualInputCombobox } from "./components/VirtualInputCombobox";
 import { AnarchyPanel, DemocracyPanel, ChatDecidesPanel } from "./components/GovPanels";
 import { EmulatorDetectField } from "./components/EmulatorDetectField";
+import {
+  ChatSourceSelect,
+  PlatformChat,
+  PowerControl,
+  hasVerifiedChannel,
+} from "./components/ChatSource";
 import { closeSetupWindow } from "./openSetupWindow";
 import {
   chatOverlayUrl,
@@ -16,6 +22,7 @@ import {
 } from "./overlayLinks";
 
 const VIGEM_BUS_DOCS_URL = "https://github.com/ViGEm/ViGEmBus";
+const SANDBOX_USERNAME = "User";
 
 function keyEventToString(event) {
   const { key, code } = event;
@@ -380,7 +387,7 @@ function SetupControllerFooter({
         onClick={() => copyToClipboard(CONTROLLER_OVERLAY_URL, setCopiedUrl)}
       >
         <span className="main-overlay-btn__text">
-          {copiedUrl ? "Copied!" : `Browser source (${obsWidth}x${obsHeight})`}
+          {copiedUrl ? "Copied!" : "Controller Browser Source"}
         </span>
         <span className="icon main-overlay-btn__icon">
           {copiedUrl ? "check" : "content_copy"}
@@ -399,6 +406,7 @@ export function SetupApp() {
   const [linkFlash, setLinkFlash] = useState("");
   const [emulatorScanning, setEmulatorScanning] = useState(false);
   const [chatTheme, setChatTheme] = useState("dark");
+  const [chatSource, setChatSource] = useState("sandbox");
   const [globalTheme, setGlobalTheme] = useState(
     () => localStorage.getItem("chatplays-theme") || "light"
   );
@@ -447,10 +455,6 @@ export function SetupApp() {
     }
     pushSettings(buildTimingSettings(setup, { [field]: !isEnabled }));
   };
-  const twitchUsername =
-    main?.twitch_username_verified && main?.twitch_display_name?.trim()
-      ? main.twitch_display_name.trim()
-      : "";
   // Automatic linking of the virtual controller to VisualBoyAdvance is not
   // solved yet, so the control is locked to Manual until it is.
   const linkMode = "manual";
@@ -466,8 +470,14 @@ export function SetupApp() {
           <button type="button" onClick={() => setSettingsOpen(true)}>
             Settings
           </button>
+          <PowerControl
+            isOn={Boolean(main?.program_status)}
+            canTurnOn={hasVerifiedChannel(main)}
+            onTogglePower={() => api.togglePower().catch(() => {})}
+          />
         </div>
         <div className="setup-topbar__chat">
+          <ChatSourceSelect source={chatSource} onSourceChange={setChatSource} />
           <button
             type="button"
             className="main-overlay-btn setup-obs-link-btn"
@@ -475,9 +485,7 @@ export function SetupApp() {
             onClick={() => copyToClipboard(OVERLAY_URL, setCopiedChatOverlay)}
           >
             <span className="main-overlay-btn__text">
-              {copiedChatOverlay
-                ? "Copied!"
-                : OVERLAY_URL.replace("http://", "").slice(0, 15) + "…"}
+              {copiedChatOverlay ? "Copied!" : "Chat Browser Source"}
             </span>
             <span className="icon main-overlay-btn__icon">
               {copiedChatOverlay ? "check" : "content_copy"}
@@ -534,25 +542,9 @@ export function SetupApp() {
                     return result.windows || [];
                   }}
                   scanning={emulatorScanning}
+                  disabled
                 />
               </label>
-            )}
-
-            {linkMode === "manual" && (
-              <div className="setup-manual-actions">
-                <button
-                  type="button"
-                  disabled={setup.manual_setup_active}
-                  onClick={() => api.manualSetup()}
-                >
-                  Start Manual Setup
-                </button>
-                {setup.manual_setup_active && (
-                  <button type="button" onClick={() => api.cancelManualSetup()}>
-                    Cancel
-                  </button>
-                )}
-              </div>
             )}
           </div>
           <div className="col setup-settings-col">
@@ -591,6 +583,23 @@ export function SetupApp() {
             </label>
           </div>
         </div>
+
+        {setup.meta_mode === "setup" && linkMode === "manual" && (
+          <div className="setup-manual-actions">
+            <button
+              type="button"
+              disabled={setup.manual_setup_active}
+              onClick={() => api.manualSetup()}
+            >
+              Start Manual Setup
+            </button>
+            {setup.manual_setup_active && (
+              <button type="button" onClick={() => api.cancelManualSetup()}>
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
 
         {setup.meta_mode === "test" ? (
           <div className="setup-link-content setup-link-content--test">
@@ -896,12 +905,19 @@ export function SetupApp() {
       )}
 
       <section className="setup-layout__chat">
-        {setup.government === "anarchy" ? (
+        {chatSource === "platform" ? (
+          <PlatformChat
+            platform={main?.streaming_platform}
+            login={main?.twitch_username_verified ? main.twitch_username.trim().toLowerCase() : ""}
+            dark={chatTheme === "dark"}
+          />
+        ) : setup.government === "anarchy" ? (
           <AnarchyPanel
             queue={setup.anarchy_queue}
+            queueUsers={setup.anarchy_queue_users}
             countdownLine={setup.setup_countdown_line}
             flashLine={linkFlash}
-            username={twitchUsername}
+            username={SANDBOX_USERNAME}
             onSubmit={(text) => api.submitInput(text)}
             chatTheme={chatTheme}
             onThemeToggle={() => setChatTheme(t => t === "dark" ? "light" : "dark")}
@@ -922,6 +938,11 @@ export function SetupApp() {
                 ? setup.democracy_queue
                 : setup.anarchy_queue
             }
+            queueUsers={
+              setup.chat_decides_active_gov === "democracy"
+                ? setup.democracy_queue_users
+                : setup.anarchy_queue_users
+            }
             countdownLine={setup.setup_countdown_line}
             flashLine={linkFlash}
             voteSlots={setup.vote_slots}
@@ -930,7 +951,7 @@ export function SetupApp() {
             minutes={minutes}
             seconds={seconds}
             timerRunning={setup.democracy_timer_running}
-            username={twitchUsername}
+            username={SANDBOX_USERNAME}
             onSubmit={(text) => api.submitInput(text)}
             onMinutesChange={setDemMinutes}
             onSecondsChange={setDemSeconds}
@@ -944,6 +965,7 @@ export function SetupApp() {
         ) : (
           <DemocracyPanel
             queue={setup.democracy_queue}
+            queueUsers={setup.democracy_queue_users}
             countdownLine={setup.setup_countdown_line}
             flashLine={linkFlash}
             voteSlots={setup.vote_slots}
@@ -952,7 +974,7 @@ export function SetupApp() {
             minutes={minutes}
             seconds={seconds}
             timerRunning={setup.democracy_timer_running}
-            username={twitchUsername}
+            username={SANDBOX_USERNAME}
             onSubmit={(text) => api.submitInput(text)}
             onMinutesChange={setDemMinutes}
             onSecondsChange={setDemSeconds}

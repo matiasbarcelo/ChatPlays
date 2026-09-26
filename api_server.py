@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+import os
+import secrets
 import time
 from pathlib import Path
 from dataclasses import asdict, dataclass, field
@@ -11,9 +13,10 @@ from typing import List, Optional, Set
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from setup_test_service import SetupTestService, SetupTestState, VoteSlot
 
@@ -29,6 +32,7 @@ from emulator_support import (
 )
 from keyboard_backend import set_target_process
 from main_settings_store import load_main_settings_cache, save_main_settings_cache
+from twitch_chat_listener import TwitchChatListener
 from twitch_user_lookup import lookup_streaming_user
 
 logging.basicConfig(level=logging.INFO)
@@ -42,9 +46,48 @@ API_PORT = 8765
 VITE_DEV_URL = "http://127.0.0.1:5173"
 FRONTEND_DIST = Path(__file__).resolve().parent / "desktop" / "dist"
 
+# Any web page the user has open can reach 127.0.0.1, so every control
+# endpoint requires this per-launch secret. Electron generates it and passes
+# it in; a standalone run makes its own and prints a link that carries it.
+API_TOKEN_FROM_ENV = os.environ.get("CHATPLAYS_API_TOKEN", "").strip()
+API_TOKEN = API_TOKEN_FROM_ENV or secrets.token_urlsafe(32)
+API_TOKEN_HEADER = "X-ChatPlays-Token"
+PUBLIC_API_PATHS = {"/api/health", "/api/overlay/state"}
+WS_AUTH_TIMEOUT_SECONDS = 5
+
+# "null" is the origin of the packaged app's file:// pages.
+ALLOWED_ORIGINS = [VITE_DEV_URL, "http://localhost:5173", "null"]
+ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+
+# OBS overlays read state without the token, so strip anything that reveals
+# the streamer's machine (window titles, file paths, setup diagnostics).
+OVERLAY_HIDDEN_SETUP_FIELDS = frozenset(
+    {
+        "setup_log",
+        "emulator_window",
+        "emulator_windows",
+        "emulator_window_options",
+        "emulator_app_name",
+        "emulator_message",
+        "emulator_config_path",
+        "emulator_executable_path",
+        "auto_link_status",
+    }
+)
+
+
+def _token_ok(candidate: str) -> bool:
+    return bool(candidate) and secrets.compare_digest(
+        candidate.encode("utf-8"), API_TOKEN.encode("utf-8")
+    )
+
 
 def state_to_dict(state: SetupTestState) -> dict:
     data = asdict(state)
+    # Queue lines from live chat carry their sender (see ChatLine); JSON would
+    # drop it, so send the senders alongside, index-aligned with each queue.
+    for key in ("anarchy_queue", "democracy_queue"):
+        data[f"{key}_users"] = [getattr(line, "user", "") for line in data[key]]
     return data
 
 
@@ -136,8 +179,7 @@ class ConnectionManager:
     def __init__(self):
         self.active: Set[WebSocket] = set()
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
+    def add(self, websocket: WebSocket):
         self.active.add(websocket)
 
     def disconnect(self, websocket: WebSocket):
@@ -156,22 +198,59 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+overlay_manager = ConnectionManager()
 main_state = MainWindowState()
 loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def _full_state(setup_state: Optional[SetupTestState] = None) -> dict:
+    return {
+        "setup": state_to_dict(setup_state if setup_state is not None else service.get_state()),
+        "main": asdict(main_state),
+    }
+
+
+def _overlay_state(setup_state: Optional[SetupTestState] = None) -> dict:
+    setup = state_to_dict(setup_state if setup_state is not None else service.get_state())
+    for key in OVERLAY_HIDDEN_SETUP_FIELDS:
+        setup.pop(key, None)
+    return {
+        "setup": setup,
+        "main": {
+            "twitch_username": main_state.twitch_username,
+            "twitch_display_name": main_state.twitch_display_name,
+        },
+    }
 
 
 def _schedule_broadcast(setup_state: Optional[SetupTestState] = None):
     if loop is None:
         return
-    payload = {
-        "type": "state",
-        "setup": state_to_dict(setup_state if setup_state is not None else service.get_state()),
-        "main": asdict(main_state),
-    }
-    asyncio.run_coroutine_threadsafe(manager.broadcast(payload), loop)
+    asyncio.run_coroutine_threadsafe(
+        manager.broadcast({"type": "state", **_full_state(setup_state)}), loop
+    )
+    asyncio.run_coroutine_threadsafe(
+        overlay_manager.broadcast({"type": "state", **_overlay_state(setup_state)}), loop
+    )
 
 
 service = SetupTestService(on_change=_schedule_broadcast)
+chat_listener = TwitchChatListener(on_message=service.submit_chat_message)
+
+
+def _live_channel() -> str:
+    if main_state.streaming_platform != "twitch" or not main_state.twitch_username_verified:
+        return ""
+    return main_state.twitch_username.strip().lower()
+
+
+def _sync_live_chat():
+    """Listen to the channel's real chat only while ChatPlays is On."""
+    channel = _live_channel()
+    if main_state.program_status and channel:
+        chat_listener.start(channel)
+    else:
+        chat_listener.stop()
 
 
 def _platform_display_name(result: dict, fallback: str = "") -> str:
@@ -336,12 +415,29 @@ def _sync_emulators_for_power_state(*, live: bool):
 
 
 app = FastAPI(title="ChatPlays API")
+
+
+@app.middleware("http")
+async def require_api_token(request: Request, call_next):
+    path = request.url.path
+    if (
+        path.startswith("/api/")
+        and path not in PUBLIC_API_PATHS
+        and not _token_ok(request.headers.get(API_TOKEN_HEADER, ""))
+    ):
+        return JSONResponse({"detail": "Missing or invalid API token"}, status_code=401)
+    return await call_next(request)
+
+
+# Added after the token check so they wrap it: 401s still carry CORS headers,
+# and the Host check (outermost) rejects DNS-rebinding requests first.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 
 
 if (FRONTEND_DIST / "assets").is_dir():
@@ -394,10 +490,12 @@ def health():
 
 @app.get("/api/state")
 def get_full_state():
-    return {
-        "setup": state_to_dict(service.get_state()),
-        "main": asdict(main_state),
-    }
+    return _full_state()
+
+
+@app.get("/api/overlay/state")
+def get_overlay_state():
+    return _overlay_state()
 
 
 @app.post("/api/setup/submit-input")
@@ -636,11 +734,21 @@ def toggle_setup_mode():
     return {"ok": True}
 
 
+def _set_power(on: bool):
+    if main_state.program_status == on:
+        return
+    main_state.program_status = on
+    service.program.setStatus()
+    _sync_emulators_for_power_state(live=on)
+    _sync_live_chat()
+
+
 @app.post("/api/main/toggle-power")
 def toggle_power():
-    main_state.program_status = not main_state.program_status
-    service.program.setStatus()
-    _sync_emulators_for_power_state(live=main_state.program_status)
+    turning_on = not main_state.program_status
+    if turning_on and not _live_channel():
+        return {"ok": False, "program_status": False, "error": "no_verified_channel"}
+    _set_power(turning_on)
     _schedule_broadcast()
     return {"ok": True, "program_status": main_state.program_status}
 
@@ -699,35 +807,59 @@ def update_main_settings(body: MainSettingsBody):
         )
     ):
         _persist_main_settings_cache()
+    if not _live_channel():
+        _set_power(False)
+    _sync_live_chat()
     _schedule_broadcast()
     return {"ok": True}
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+async def _stream_state(websocket: WebSocket, target: ConnectionManager, snapshot) -> None:
+    target.add(websocket)
     try:
-        await websocket.send_text(
-            json.dumps(
-                {
-                    "type": "state",
-                    "setup": state_to_dict(service.get_state()),
-                    "main": asdict(main_state),
-                }
-            )
-        )
+        await websocket.send_text(json.dumps({"type": "state", **snapshot()}))
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        pass
+    finally:
+        target.disconnect(websocket)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    # Browsers can't set headers on a WebSocket, so the token is the first
+    # message; keeping it out of the URL also keeps it out of access logs.
+    await websocket.accept()
+    try:
+        token = await asyncio.wait_for(websocket.receive_text(), WS_AUTH_TIMEOUT_SECONDS)
+    except Exception:
+        token = ""
+    if not _token_ok(token):
+        await websocket.close(code=1008)
+        return
+    await _stream_state(websocket, manager, _full_state)
+
+
+@app.websocket("/ws/overlay")
+async def overlay_websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    await _stream_state(websocket, overlay_manager, _overlay_state)
 
 
 @app.on_event("shutdown")
 def on_shutdown():
+    chat_listener.stop()
     service.shutdown()
 
 
 def main():
+    if not API_TOKEN_FROM_ENV:
+        logger.warning(
+            "No CHATPLAYS_API_TOKEN set (not launched from Electron). "
+            "For browser-only dev, open http://127.0.0.1:5173/?token=%s",
+            API_TOKEN,
+        )
     uvicorn.run(app, host=API_HOST, port=API_PORT, log_level="info")
 
 

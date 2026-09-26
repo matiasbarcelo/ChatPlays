@@ -10,7 +10,7 @@ import { AnarchyPanel, DemocracyPanel, ChatDecidesPanel } from "./components/Gov
  * `?user=Name` prefixes each line with a name, as the panel does in the app.
  */
 export function ChatOverlayApp() {
-  const { ready, setup, main } = useChatPlaysState("setup");
+  const { ready, setup, main } = useChatPlaysState("setup", { overlay: true });
   const params = new URLSearchParams(window.location.search);
   const chatTheme = params.get("theme") === "light" ? "light" : "dark";
   const username =
@@ -29,7 +29,9 @@ export function ChatOverlayApp() {
 
   let panel;
   if (setup.government === "anarchy") {
-    panel = <AnarchyPanel {...shared} queue={setup.anarchy_queue} />;
+    panel = (
+      <AnarchyPanel {...shared} queue={setup.anarchy_queue} queueUsers={setup.anarchy_queue_users} />
+    );
   } else if (setup.government === "chat_decides") {
     panel = (
       <ChatDecidesPanel
@@ -46,6 +48,11 @@ export function ChatOverlayApp() {
             ? setup.democracy_queue
             : setup.anarchy_queue
         }
+        queueUsers={
+          setup.chat_decides_active_gov === "democracy"
+            ? setup.democracy_queue_users
+            : setup.anarchy_queue_users
+        }
         voteSlots={setup.vote_slots}
         countdownLabel={setup.democracy_countdown_label}
         latestWinner={setup.latest_winner}
@@ -56,6 +63,7 @@ export function ChatOverlayApp() {
       <DemocracyPanel
         {...shared}
         queue={setup.democracy_queue}
+        queueUsers={setup.democracy_queue_users}
         voteSlots={setup.vote_slots}
         countdownLabel={setup.democracy_countdown_label}
         latestWinner={setup.latest_winner}

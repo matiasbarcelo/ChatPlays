@@ -175,6 +175,7 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   background: #1c1c1c;
   border-bottom: 2px solid #333;
   padding: 6px 10px;
@@ -956,9 +957,12 @@ select {
   list-style: none;
   margin: 0;
   padding: 12px 14px;
+  /* Lines fill downward from the TOP of the panel. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
   overflow-y: auto;
   overflow-x: hidden;
-  overflow-anchor: none;
   overscroll-behavior: contain;
   background: transparent;
   border: none;
@@ -989,6 +993,7 @@ select {
 }
 
 .chat-panel__queue-item {
+  flex: none;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1239,17 +1244,40 @@ select {
 
 .setup-obs-link-btn {
   width: auto;
-  max-width: min(100%, 200px);
+  max-width: min(100%, 330px);
   font-size: 0.78rem;
   padding: 3px 6px;
-  cursor: default;
-  opacity: 0.7;
+  cursor: pointer;
+  opacity: 1;
+}
+
+.setup-obs-link-btn:hover {
+  border-color: var(--app-accent, #4a90d9);
+}
+
+.setup-obs-link-btn__dims {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  background: var(--app-card-border, #ddd);
+  color: var(--app-fg, #111);
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.setup-obs-link-btn.is-copied {
+  border-color: #3fa46a;
+  color: #3fa46a;
 }
 
 .setup-obs-link-btn:disabled {
   color: var(--app-fg);
   background: var(--app-input-bg);
   border-color: var(--app-input-border);
+  cursor: default;
+  opacity: 0.7;
 }
 
 .controller-stage {
@@ -2017,6 +2045,11 @@ input:disabled {
   padding: 1px 0;
 }
 
+.monitor-queue__user {
+  color: var(--app-muted);
+  margin-right: 6px;
+}
+
 /* Prod browser-source link, right-aligned on its section header row. */
 .monitor-obs-btn {
   flex-shrink: 0;
@@ -2164,6 +2197,18 @@ input:disabled {
   display: block;
 }
 
+.main-info-icon--tip-left .main-tooltip {
+  left: auto;
+  right: calc(100% + 8px);
+}
+
+.main-info-icon--tip-left .main-tooltip::after {
+  right: auto;
+  left: 100%;
+  border-right-color: transparent;
+  border-left-color: #1a1a1a;
+}
+
 .main-gov-row {
   display: flex;
   align-items: center;
@@ -2256,8 +2301,8 @@ input:disabled {
 .main-overlay-col > .main-field-label {
   display: block;
   text-align: center;
-  /* nudge left by the info icon + gap so it centres over the buttons */
-  padding-right: 26px;
+  /* nudge right by the info icon + gap so it centres over the buttons */
+  padding-left: 26px;
 }
 
 /* Select wrapper with left icon */
@@ -2329,7 +2374,7 @@ input:disabled {
 /* Overlay buttons equal-width via CSS grid */
 .main-overlay-grid {
   display: grid;
-  grid-template-columns: max-content auto;
+  grid-template-columns: auto max-content;
   gap: 4px 6px;
   align-items: center;
 }
@@ -2416,6 +2461,13 @@ input:disabled {
   opacity: 0.85;
 }
 
+.power-btn:disabled,
+.power-btn:disabled:hover {
+  background: transparent;
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .power-btn--off {
   color: #aaa;
 }
@@ -2445,4 +2497,265 @@ input:disabled {
 
 .status-off {
   color: #b42318;
+}
+
+/* ── Setup/Test topbar: chat source picker + shared power control ── */
+
+.setup-topbar__chat {
+  gap: 8px;
+}
+
+.chat-source-select {
+  width: auto;
+  flex-shrink: 0;
+  margin-right: auto;
+  padding: 3px 6px;
+  font-size: 0.82rem;
+}
+
+/* Right-aligned to the edge of the settings panel below it. */
+.power-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.power-control__status {
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-width: 2.2em;
+}
+
+.power-btn--small {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+
+.power-btn--small .power-btn__ring {
+  width: 28px;
+  height: 28px;
+  border-width: 2px;
+}
+
+.power-btn--small .power-btn__icon {
+  font-size: 18px;
+}
+
+.power-btn--small.power-btn--on .power-btn__ring {
+  border-color: #22c55e;
+}
+
+/* Open below the icon so the tooltip doesn't cover the chat column's controls. */
+.power-control .main-tooltip {
+  left: auto;
+  right: -4px;
+  top: calc(100% + 8px);
+  transform: none;
+}
+
+.power-control .main-tooltip::after {
+  top: auto;
+  bottom: 100%;
+  right: 8px;
+  transform: none;
+  border-right-color: transparent;
+  border-bottom-color: #1a1a1a;
+}
+
+.platform-chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  border: 1px solid var(--app-card-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--app-card-bg);
+}
+
+.platform-chat__frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+}
+
+.platform-chat--empty {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--app-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   OBS overlay stage
+   A fixed 1920x1080 (16:9) stage, scaled by JS to fit whatever size
+   OBS gives the browser source. Transparent so it composites over
+   gameplay; the chat panel inside is the very same component tree
+   the Setup/Test window renders.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.overlay-body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent !important;
+  /* Pixel fonts are crisper without subpixel smoothing. */
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  text-rendering: geometricPrecision;
+}
+
+.overlay-body #root {
+  width: 100%;
+  height: 100%;
+}
+
+.overlay-stage {
+  /* Fills the browser source at native resolution. No transform scaling:
+     scaling a rendered layout resamples glyphs and blurs pixel fonts. */
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.overlay-stage--debug {
+  outline: 2px dashed rgba(255, 0, 128, 0.9);
+  outline-offset: -2px;
+}
+
+.overlay-chat {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  /* Panel fills the OBS source edge to edge — an exact mirror of the app. */
+  padding: 0;
+  /* Keeps the tall, slim strip shape even if the OBS browser source is wider
+     than intended (its default is 800x600). Capping WIDTH rather than scaling
+     the whole stage means text is still laid out at native size, so it stays
+     sharp. Override with ?width=<px> or ?width=full. */
+  max-width: var(--overlay-strip-width, 640px);
+}
+
+/* Where the strip sits when the source is wider than the strip. */
+.overlay-stage--left { justify-content: flex-start; }
+.overlay-stage--center { justify-content: center; }
+.overlay-stage--right { justify-content: flex-end; }
+
+/* App-only chrome: hidden on stream (overlay), kept usable in the app. */
+.overlay-chat .chat-panel__theme-select,
+.overlay-chat .chat-panel__form {
+  display: none;
+}
+
+/* Hide interactive democracy controls on stream, keep the readouts. */
+.overlay-chat .chat-panel__controls button,
+.overlay-chat .chat-panel__controls input,
+.overlay-chat .chat-decides-settings {
+  display: none;
+}
+
+/* Chat panel look selector (replaces the old Dark/Light toggle button). */
+.chat-panel__theme-select {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 6px;
+  font-family: inherit;
+  font-size: 8px;
+  border-radius: 4px;
+  border: 1px solid #555;
+  background: #2a2a2a;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.chat-panel__theme-select:hover {
+  background: #383838;
+  color: #fff;
+}
+
+.chat-panel--light .chat-panel__theme-select {
+  background: #e8e8e8;
+  border-color: #bbb;
+  color: #333;
+}
+
+.chat-panel--light .chat-panel__theme-select:hover {
+  background: #d8d8d8;
+  color: #111;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Source label — plain white text in the gov header bar
+   Reads like the government title next to it (same font/weight/colour),
+   just smaller. Marks the OBS source as Setup/Test, not the live feed.
+   Hide with ?badge=0.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.chat-panel__source-label {
+  flex-shrink: 1;
+  min-width: 0;
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-panel__source-label-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* Light theme has a light header, so the text flips to dark. */
+.chat-panel--light .chat-panel__source-label,
+.setup-layout__chat .chat-panel.chat-panel--light .chat-panel__source-label {
+  color: #111;
+  -webkit-text-fill-color: #111;
+}
+
+.chat-panel--light .chat-panel__source-label-dot {
+  background: #111;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Username is always white, in every theme and both surfaces.
+   In Light the panel is white, so a dark outline keeps it readable.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.chat-panel .chat-panel__queue-user,
+.chat-panel .chat-panel__form-user,
+.chat-panel--light .chat-panel__queue-user,
+.chat-panel--light .chat-panel__form-user,
+.setup-layout__chat .chat-panel .chat-panel__queue-user,
+.setup-layout__chat .chat-panel .chat-panel__form-user,
+.setup-layout__chat .chat-panel.chat-panel--light .chat-panel__queue-user,
+.setup-layout__chat .chat-panel.chat-panel--light .chat-panel__form-user{
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+/* Keep white legible on the Light theme's white panel. */
+.chat-panel--light .chat-panel__queue-user,
+.chat-panel--light .chat-panel__form-user,
+.setup-layout__chat .chat-panel.chat-panel--light .chat-panel__queue-user,
+.setup-layout__chat .chat-panel.chat-panel--light .chat-panel__form-user {
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.95),
+    0 1px 3px rgba(0, 0, 0, 0.8);
 }

@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { api, connectStateSocket } from "../api";
 
-export function useChatPlaysState(scope = "all") {
+/** `overlay: true` uses the token-free, redacted feed meant for OBS browser sources. */
+export function useChatPlaysState(scope = "all", { overlay = false } = {}) {
   const [state, setState] = useState({ setup: null, main: null });
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let active = true;
 
-    api
-      .getState()
+    (overlay ? api.getOverlayState() : api.getState())
       .then((data) => {
         if (active) {
           setState(data);
@@ -28,13 +28,13 @@ export function useChatPlaysState(scope = "all") {
         }));
         setReady(true);
       }
-    });
+    }, { overlay });
 
     return () => {
       active = false;
       disconnect();
     };
-  }, []);
+  }, [overlay]);
 
   if (scope === "setup") return { ready, setup: state.setup, main: state.main };
   if (scope === "main") return { ready, main: state.main, setup: state.setup };

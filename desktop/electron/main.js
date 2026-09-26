@@ -1,9 +1,13 @@
 const { app, BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
+const { pathToFileURL } = require("url");
 
 const API_PORT = 8765;
+const API_TOKEN = crypto.randomBytes(32).toString("hex");
+const DEV_SERVER_URL = "http://127.0.0.1:5173";
 
 // The main view renders at a fixed 360px column; this is the content box that
 // fits it end to end so the window opens with no scrollbar.
@@ -28,6 +32,8 @@ function pythonExecutable() {
   const root = projectRoot();
   const venvCandidates = [
     path.join(root, "virt", "Scripts", "python.exe"),
+    // MSYS/MinGW-created venvs use the POSIX layout but keep the .exe suffix
+    path.join(root, "virt", "bin", "python.exe"),
     path.join(root, "virt", "bin", "python"),
   ];
   for (const candidate of venvCandidates) {
@@ -50,7 +56,7 @@ function pythonExecutable() {
 function startPythonBackend() {
   const root = projectRoot();
   const script = path.join(root, "api_server.py");
-  const env = { ...process.env, PYTHONUNBUFFERED: "1" };
+  const env = { ...process.env, PYTHONUNBUFFERED: "1", CHATPLAYS_API_TOKEN: API_TOKEN };
   delete env.PYTHONPATH;
   pythonProcess = spawn(pythonExecutable(), [script], {
     cwd: root,
@@ -69,9 +75,18 @@ function stopPythonBackend() {
   }
 }
 
+// Pages opened from inside the app (e.g. external help links) inherit the
+// preload script, so only hand the API token to the app's own pages.
+function isAppPage(url) {
+  const appRoot = isDev
+    ? `${DEV_SERVER_URL}/`
+    : `${pathToFileURL(path.join(__dirname, "..", "dist")).href}/`;
+  return typeof url === "string" && url.startsWith(appRoot);
+}
+
 function loadWindow(win, page) {
   if (isDev) {
-    win.loadURL(`http://127.0.0.1:5173/${page}`);
+    win.loadURL(`${DEV_SERVER_URL}/${page}`);
   } else {
     win.loadFile(path.join(__dirname, "../dist", page));
   }
@@ -168,6 +183,10 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("get-api-base", () => `http://127.0.0.1:${API_PORT}`);
+
+  ipcMain.handle("get-api-token", (event) =>
+    isAppPage(event.senderFrame?.url) ? API_TOKEN : null
+  );
 
   ipcMain.handle("get-file-icon", async (_event, filePath) => {
     if (!filePath || typeof filePath !== "string") return null;
