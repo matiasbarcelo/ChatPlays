@@ -46,19 +46,22 @@ export function GovHeader({ government, chatTheme, onThemeToggle, subtitle }) {
  * anarchy appends (oldest first — it is a play queue), democracy prepends
  * (newest first — latest vote on top). Do not re-sort here.
  */
-function ChatQueue({ items, username }) {
-  const displayUsername = username?.trim() || "";
+function ChatQueue({ items, users, username }) {
+  const fallbackUsername = username?.trim() || "";
 
   return (
     <ul className="chat-panel__queue">
-      {items.map((item, index) => (
-        <li key={`${item}-${index}`} className="chat-panel__queue-item">
-          {displayUsername && (
-            <span className="chat-panel__queue-user">{displayUsername}</span>
-          )}
-          <span className="chat-panel__queue-input">{item}</span>
-        </li>
-      ))}
+      {items.map((item, index) => {
+        const displayUsername = users?.[index] || fallbackUsername;
+        return (
+          <li key={`${item}-${index}`} className="chat-panel__queue-item">
+            {displayUsername && (
+              <span className="chat-panel__queue-user">{displayUsername}</span>
+            )}
+            <span className="chat-panel__queue-input">{item}</span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -95,6 +98,7 @@ function ChatInputForm({ onSubmit, username }) {
 
 export function AnarchyPanel({
   queue,
+  queueUsers,
   countdownLine,
   flashLine,
   onSubmit,
@@ -112,7 +116,7 @@ export function AnarchyPanel({
         onThemeToggle={displayOnly ? undefined : onThemeToggle}
       />
       <div className="chat-panel__body">
-        <ChatQueue items={items} username={username} />
+        <ChatQueue items={items} users={items === queue ? queueUsers : undefined} username={username} />
       </div>
       {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
     </div>
@@ -121,6 +125,7 @@ export function AnarchyPanel({
 
 export function DemocracyPanel({
   queue,
+  queueUsers,
   countdownLine,
   flashLine,
   voteSlots,
@@ -191,6 +196,7 @@ export function DemocracyPanel({
       <div className="chat-panel__body">
         <ChatQueue
           items={countdownLine ? [countdownLine] : (flashLine ? [flashLine] : queue)}
+          users={countdownLine || flashLine ? undefined : queueUsers}
           username={username}
         />
       </div>
@@ -269,6 +275,7 @@ export function ChatDecidesPanel({
   voteTtlMinutes,
   onSettingsChange,
   queue,
+  queueUsers,
   countdownLine,
   flashLine,
   voteSlots,
@@ -409,7 +416,7 @@ export function ChatDecidesPanel({
         )}
       </div>
       <div className="chat-panel__body">
-        <ChatQueue items={items} username={username} />
+        <ChatQueue items={items} users={items === queue ? queueUsers : undefined} username={username} />
       </div>
       {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
     </div>

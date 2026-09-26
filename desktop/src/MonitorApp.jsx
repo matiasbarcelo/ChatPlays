@@ -11,7 +11,7 @@ import {
 } from "./overlayLinks";
 
 /** Copy button for a browser source, sat on a section header row. */
-function OverlayLink({ url, size }) {
+function OverlayLink({ url, size, label }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -20,9 +20,7 @@ function OverlayLink({ url, size }) {
       title={overlayTitle(url, size)}
       onClick={() => copyOverlayUrl(url, setCopied)}
     >
-      <span className="monitor-obs-btn__text">
-        {copied ? "Copied!" : `Browser source (${size.replace(/ /g, "")})`}
-      </span>
+      <span className="monitor-obs-btn__text">{copied ? "Copied!" : label}</span>
       <span className="icon monitor-obs-btn__icon">
         {copied ? "check" : "content_copy"}
       </span>
@@ -30,11 +28,17 @@ function OverlayLink({ url, size }) {
   );
 }
 
-function LiveQueue({ items }) {
+/** Only lines from the real platform chat; those carry a sender, sandbox lines don't. */
+function LiveQueue({ items, users }) {
+  const lines = items
+    .map((text, i) => ({ text, user: users?.[i] || "" }))
+    .filter((line) => line.user);
   return (
     <ul className="monitor-queue">
-      {items.map((item, i) => (
-        <li key={`${item}-${i}`}>{item}</li>
+      {lines.map((line, i) => (
+        <li key={`${line.user}-${line.text}-${i}`}>
+          <span className="monitor-queue__user">{line.user}</span> {line.text}
+        </li>
       ))}
     </ul>
   );
@@ -75,14 +79,11 @@ export function MonitorApp() {
     );
   }
 
-  const queue =
-    setup.government === "anarchy"
-      ? setup.anarchy_queue ?? []
-      : setup.government === "chat_decides"
-        ? (setup.chat_decides_active_gov === "democracy"
-            ? setup.democracy_queue
-            : setup.anarchy_queue) ?? []
-        : setup.democracy_queue ?? [];
+  const activeGov =
+    setup.government === "chat_decides" ? setup.chat_decides_active_gov : setup.government;
+  const queueKey = activeGov === "democracy" ? "democracy_queue" : "anarchy_queue";
+  const queue = setup[queueKey] ?? [];
+  const queueUsers = setup[`${queueKey}_users`] ?? [];
 
   const controllerCanvas = (
     CONTROLLER_LAYOUTS[setup.controller] || CONTROLLER_LAYOUTS.GBA
@@ -99,9 +100,9 @@ export function MonitorApp() {
     <div className="monitor-shell">
       <div className="monitor-section-header">
         <span>{govLabel} — Live Chat</span>
-        <OverlayLink url={chatOverlayUrl()} size={CHAT_OVERLAY_SIZE} />
+        <OverlayLink url={chatOverlayUrl()} size={CHAT_OVERLAY_SIZE} label="Chat Browser Source" />
       </div>
-      <LiveQueue items={queue} />
+      <LiveQueue items={queue} users={queueUsers} />
 
       <div className="monitor-divider" />
 
@@ -110,6 +111,7 @@ export function MonitorApp() {
         <OverlayLink
           url={controllerOverlayUrl()}
           size={`${controllerCanvas.width} x ${controllerCanvas.height}`}
+          label="Controller Browser Source"
         />
       </div>
       <div className="monitor-controller-stage">

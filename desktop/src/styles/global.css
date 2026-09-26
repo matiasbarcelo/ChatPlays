@@ -2045,6 +2045,11 @@ input:disabled {
   padding: 1px 0;
 }
 
+.monitor-queue__user {
+  color: var(--app-muted);
+  margin-right: 6px;
+}
+
 /* Browser-source link, right-aligned on its section header row. */
 .monitor-obs-btn {
   flex-shrink: 0;
@@ -2192,6 +2197,18 @@ input:disabled {
   display: block;
 }
 
+.main-info-icon--tip-left .main-tooltip {
+  left: auto;
+  right: calc(100% + 8px);
+}
+
+.main-info-icon--tip-left .main-tooltip::after {
+  right: auto;
+  left: 100%;
+  border-right-color: transparent;
+  border-left-color: #1a1a1a;
+}
+
 .main-gov-row {
   display: flex;
   align-items: center;
@@ -2284,8 +2301,8 @@ input:disabled {
 .main-overlay-col > .main-field-label {
   display: block;
   text-align: center;
-  /* nudge left by the info icon + gap so it centres over the buttons */
-  padding-right: 26px;
+  /* nudge right by the info icon + gap so it centres over the buttons */
+  padding-left: 26px;
 }
 
 /* Select wrapper with left icon */
@@ -2357,7 +2374,7 @@ input:disabled {
 /* Overlay buttons equal-width via CSS grid */
 .main-overlay-grid {
   display: grid;
-  grid-template-columns: max-content auto;
+  grid-template-columns: auto max-content;
   gap: 4px 6px;
   align-items: center;
 }
@@ -2444,6 +2461,13 @@ input:disabled {
   opacity: 0.85;
 }
 
+.power-btn:disabled,
+.power-btn:disabled:hover {
+  background: transparent;
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .power-btn--off {
   color: #aaa;
 }
@@ -2473,6 +2497,95 @@ input:disabled {
 
 .status-off {
   color: #b42318;
+}
+
+/* ── Setup/Test topbar: chat source picker + shared power control ── */
+
+.setup-topbar__chat {
+  gap: 8px;
+}
+
+.chat-source-select {
+  width: auto;
+  flex-shrink: 0;
+  margin-right: auto;
+  padding: 3px 6px;
+  font-size: 0.82rem;
+}
+
+/* Right-aligned to the edge of the settings panel below it. */
+.power-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.power-control__status {
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-width: 2.2em;
+}
+
+.power-btn--small {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+
+.power-btn--small .power-btn__ring {
+  width: 28px;
+  height: 28px;
+  border-width: 2px;
+}
+
+.power-btn--small .power-btn__icon {
+  font-size: 18px;
+}
+
+.power-btn--small.power-btn--on .power-btn__ring {
+  border-color: #22c55e;
+}
+
+/* Open below the icon so the tooltip doesn't cover the chat column's controls. */
+.power-control .main-tooltip {
+  left: auto;
+  right: -4px;
+  top: calc(100% + 8px);
+  transform: none;
+}
+
+.power-control .main-tooltip::after {
+  top: auto;
+  bottom: 100%;
+  right: 8px;
+  transform: none;
+  border-right-color: transparent;
+  border-bottom-color: #1a1a1a;
+}
+
+.platform-chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  border: 1px solid var(--app-card-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--app-card-bg);
+}
+
+.platform-chat__frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+}
+
+.platform-chat--empty {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--app-muted);
 }
 
 /* ═══════════════════════════════════════════════════════════════════

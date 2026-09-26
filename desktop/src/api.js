@@ -1,4 +1,6 @@
 const DEFAULT_API = "http://127.0.0.1:8765";
+const TOKEN_HEADER = "X-ChatPlays-Token";
+const TOKEN_STORAGE_KEY = "chatplays-api-token";
 
 export async function getApiBase() {
   if (window.chatplays?.getApiBase) {
@@ -7,11 +9,33 @@ export async function getApiBase() {
   return DEFAULT_API;
 }
 
+let tokenPromise = null;
+
+async function loadApiToken() {
+  if (window.chatplays?.getApiToken) {
+    return (await window.chatplays.getApiToken()) || "";
+  }
+  // Browser-only dev: a standalone api_server.py prints a link carrying ?token=.
+  const fromUrl = new URLSearchParams(window.location.search).get("token");
+  try {
+    if (fromUrl) localStorage.setItem(TOKEN_STORAGE_KEY, fromUrl);
+    return fromUrl || localStorage.getItem(TOKEN_STORAGE_KEY) || "";
+  } catch {
+    return fromUrl || "";
+  }
+}
+
+function getApiToken() {
+  if (!tokenPromise) tokenPromise = loadApiToken();
+  return tokenPromise;
+}
+
 async function apiFetch(path, options = {}) {
-  const base = await getApiBase();
+  const [base, token] = await Promise.all([getApiBase(), getApiToken()]);
+  const { headers, ...rest } = options;
   const response = await fetch(`${base}${path}`, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options,
+    ...rest,
+    headers: { "Content-Type": "application/json", [TOKEN_HEADER]: token, ...headers },
   });
   if (!response.ok) {
     throw new Error(`API ${path} failed: ${response.status}`);
@@ -21,6 +45,7 @@ async function apiFetch(path, options = {}) {
 
 export const api = {
   getState: () => apiFetch("/api/state"),
+  getOverlayState: () => apiFetch("/api/overlay/state"),
   submitInput: (text) =>
     apiFetch("/api/setup/submit-input", {
       method: "POST",
@@ -88,14 +113,18 @@ export const api = {
   },
 };
 
-export function connectStateSocket(onMessage) {
+export function connectStateSocket(onMessage, { overlay = false } = {}) {
   let ws;
   let closed = false;
 
   async function connect() {
-    const base = await getApiBase();
-    const url = base.replace(/^http/, "ws") + "/ws";
+    const [base, token] = await Promise.all([getApiBase(), overlay ? "" : getApiToken()]);
+    if (closed) return;
+    const url = base.replace(/^http/, "ws") + (overlay ? "/ws/overlay" : "/ws");
     ws = new WebSocket(url);
+    if (!overlay) {
+      ws.onopen = () => ws.send(token);
+    }
     ws.onmessage = (event) => {
       try {
         onMessage(JSON.parse(event.data));

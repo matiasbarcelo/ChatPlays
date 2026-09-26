@@ -63,6 +63,24 @@ CONTROLLER_CLASS_NAMES = {
 }
 
 
+class ChatLine(str):
+    """A queued chat line that remembers who sent it.
+
+    It is still a str, so every queue comparison and InputSequence parse keeps
+    working unchanged; lines typed in the sandbox are plain str with no sender.
+    """
+
+    user: str = ""
+
+
+def _chat_line(text: str, user: str = "") -> str:
+    if not user:
+        return text
+    line = ChatLine(text)
+    line.user = user
+    return line
+
+
 @dataclass
 class VoteSlot:
     input_text: str = "empty"
@@ -192,6 +210,16 @@ class SetupTestService:
 
     def on_program_power_changed(self, *, live: bool, prefer_newest_vba: bool = False):
         self._program_live = bool(live)
+        if live:
+            # Live chat is played through Test mode's queue, the same path the
+            # sandbox and fake chat use.
+            if self.state.meta_mode != "test":
+                self.set_meta_mode("test")
+            with self._lock:
+                if self._effective_government() == "democracy" and not self.state.democracy_timer_running:
+                    self._begin_democracy_vote_round()
+        else:
+            self._stop_democracy_vote_round()
         if self.state.controller != "GBA":
             self._notify()
             return
@@ -323,7 +351,10 @@ class SetupTestService:
             return self.state.democracy_queue
         return self.state.anarchy_queue
 
-    def _append_chat_line(self, line: str, gov: Optional[str] = None, *, prepend: bool = False):
+    def _append_chat_line(
+        self, line: str, gov: Optional[str] = None, *, prepend: bool = False, user: str = ""
+    ):
+        line = _chat_line(line, user)
         queue = self._chat_queue(gov)
         if prepend:
             queue.insert(0, line)
@@ -354,10 +385,10 @@ class SetupTestService:
         self.state.democracy_queue.clear()
         self._pending_democracy_votes.clear()
 
-    def _enqueue_democracy_vote(self, text: str):
+    def _enqueue_democracy_vote(self, text: str, user: str = ""):
         self._democracy_vote_serial += 1
         self._pending_democracy_votes.append((self._democracy_vote_serial, text))
-        self._append_chat_line(text, prepend=True)
+        self._append_chat_line(text, prepend=True, user=user)
 
     def _cancel_chat_decides_prune_timer(self):
         if self._chat_decides_prune_timer:
@@ -377,11 +408,11 @@ class SetupTestService:
             self._prune_and_recompute_chat_decides()
             self._schedule_chat_decides_prune()
 
-    def _enqueue_chat_decides_governance_vote(self, choice: str):
+    def _enqueue_chat_decides_governance_vote(self, choice: str, user: str = ""):
         now = time.time()
         with self._lock:
             self._chat_decides_gov_pending.append((now, choice))
-            self._append_chat_line(choice)
+            self._append_chat_line(choice, user=user)
         self._prune_and_recompute_chat_decides(notify=True)
 
     def _process_chat_decides_gov_queue(self, now: float):
@@ -1224,6 +1255,33 @@ class SetupTestService:
             return
 
         self._countdown_runner.start_single(text)
+
+    def submit_chat_message(self, user: str, text: str):
+        """Queue a message from the live platform chat.
+
+        Unlike the sandbox, viewers can't run commands such as "clear", and
+        nothing is queued outside Test mode or while a setup step is running.
+        """
+        text = text.strip().lower().replace(" ", "")
+        if not text or self.program.setupTest.getMetaMode() != "test":
+            return
+        with self._lock:
+            if self.state.setup_countdown_active or self.state.manual_setup_active:
+                return
+
+        if self._is_chat_decides_mode() and text in GOVERNANCE_VOTE_CHOICES:
+            self._enqueue_chat_decides_governance_vote(text, user=user)
+            return
+
+        if not self._is_valid_chat_command(text):
+            return
+
+        with self._lock:
+            if self._effective_government() == "anarchy":
+                self._append_chat_line(text, user=user)
+            else:
+                self._enqueue_democracy_vote(text, user=user)
+        self._notify()
 
     def press_controller_button(self, button_name: str):
         if self.state.manual_setup_active:

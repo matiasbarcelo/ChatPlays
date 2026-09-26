@@ -1,6 +1,10 @@
 import { useRef, useState } from "react";
 
-export function InfoIcon({ tip, onClick, href, fixedOnHover = false }) {
+const TOOLTIP_GAP = 8;
+const TOOLTIP_MAX_WIDTH = 280;
+
+/** `placement="left"` opens the tooltip leftward, sized to the space left of the icon. */
+export function InfoIcon({ tip, onClick, href, fixedOnHover = false, placement = "right" }) {
   const isLink = Boolean(onClick || href);
   const iconRef = useRef(null);
   const [tooltipStyle, setTooltipStyle] = useState(null);
@@ -16,8 +20,14 @@ export function InfoIcon({ tip, onClick, href, fixedOnHover = false }) {
   }
 
   function showFixedTooltip() {
-    if (!fixedOnHover || !iconRef.current) return;
+    if (!iconRef.current) return;
     const rect = iconRef.current.getBoundingClientRect();
+    if (placement === "left") {
+      const room = rect.left - TOOLTIP_GAP * 2;
+      setTooltipStyle({ maxWidth: `${Math.min(TOOLTIP_MAX_WIDTH, room)}px` });
+      return;
+    }
+    if (!fixedOnHover) return;
     setTooltipStyle({
       position: "fixed",
       left: `${rect.right + 8}px`,
@@ -36,7 +46,9 @@ export function InfoIcon({ tip, onClick, href, fixedOnHover = false }) {
   return (
     <span
       ref={iconRef}
-      className={`main-info-icon${isLink ? " main-info-icon--link" : ""}`}
+      className={`main-info-icon${isLink ? " main-info-icon--link" : ""}${
+        placement === "left" ? " main-info-icon--tip-left" : ""
+      }`}
       onClick={isLink ? handleClick : undefined}
       onMouseEnter={showFixedTooltip}
       onMouseLeave={hideFixedTooltip}

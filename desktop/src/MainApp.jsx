@@ -10,6 +10,7 @@ import { InfoIcon } from "./components/InfoIcon";
 import { EmulatorDetectField } from "./components/EmulatorDetectField";
 import { chatOverlayUrl } from "./overlayLinks";
 import { UsernameField } from "./components/UsernameField";
+import { hasVerifiedChannel } from "./components/ChatSource";
 
 function TwitchIcon({ size = 18 }) {
   return (
@@ -103,7 +104,7 @@ export function MainApp() {
       </label>
 
       <label className="col main-field">
-        <span className="main-field-label">Username</span>
+        <span className="main-field-label">Channel</span>
         <UsernameField
           value={main.twitch_username}
           verified={main.twitch_username_verified}
@@ -168,7 +169,14 @@ export function MainApp() {
             type="button"
             className={`power-btn${isOn ? " power-btn--on" : " power-btn--off"}`}
             onClick={() => api.togglePower()}
-            title={isOn ? "Turn off" : "Turn on"}
+            disabled={!isOn && !hasVerifiedChannel(main)}
+            title={
+              !isOn && !hasVerifiedChannel(main)
+                ? "Verify your channel above to turn ChatPlays on"
+                : isOn
+                  ? "Turn off"
+                  : "Turn on"
+            }
           >
             <div className="power-btn__ring">
               <span className="icon power-btn__icon" style={{ fontSize: 52, lineHeight: 1 }}>power_settings_new</span>
@@ -183,6 +191,10 @@ export function MainApp() {
           <span className="main-field-label">Chat Overlay</span>
 
           <div className="main-overlay-grid">
+            <InfoIcon
+              placement="left"
+              tip="Browser source URL for OBS — add it in OBS and set the size to 400 x 900"
+            />
             <button type="button" className="main-overlay-btn" onClick={copyUrl} title={overlayUrl}>
               <span className="main-overlay-btn__text">
                 {overlayUrl.replace("http://", "").slice(0, 15) + "…"}
@@ -191,8 +203,11 @@ export function MainApp() {
                 {copied ? "check" : "content_copy"}
               </span>
             </button>
-            <InfoIcon tip="Browser source URL for OBS — add it in OBS and set the size to 400 x 900" />
 
+            <InfoIcon
+              placement="left"
+              tip="Live view of the running chat — separate from the Setup/Test window"
+            />
             <button
               type="button"
               className="main-overlay-btn"
@@ -208,13 +223,15 @@ export function MainApp() {
               <span className="main-overlay-btn__text">Chat Monitor</span>
               <span className="icon main-overlay-btn__icon">monitor</span>
             </button>
-            <InfoIcon tip="Live view of the running chat — separate from the Setup/Test window" />
 
+            <InfoIcon
+              placement="left"
+              tip="Configure inputs and test things out while the app is running"
+            />
             <button type="button" className="main-overlay-btn" onClick={() => openSetupWindow()}>
               <span className="main-overlay-btn__text">Setup / Test</span>
               <span className="icon main-overlay-btn__icon">open_in_new</span>
             </button>
-            <InfoIcon tip="Configure inputs and test things out while the app is running" />
           </div>
         </div>
       </div>

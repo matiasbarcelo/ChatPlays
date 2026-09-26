@@ -110,15 +110,15 @@ export function UsernameField({
   if (status === "found" && displayName && focused) {
     hint = <span className="username-field__hint status-on">Found: {displayName}</span>;
   } else if (status === "not_found") {
-    hint = <span className="username-field__hint status-off">User not found on Twitch</span>;
+    hint = <span className="username-field__hint status-off">Channel not found on Twitch</span>;
   } else if (status === "invalid") {
     hint = (
       <span className="username-field__hint status-off">
-        Invalid username (4-25 characters, letters, numbers, underscores)
+        Invalid channel name (4-25 characters, letters, numbers, underscores)
       </span>
     );
   } else if (status === "error") {
-    hint = <span className="username-field__hint status-off">Could not verify username right now</span>;
+    hint = <span className="username-field__hint status-off">Could not verify channel right now</span>;
   }
 
   return (
@@ -129,7 +129,7 @@ export function UsernameField({
           onChange={(e) => setText(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={handleBlur}
-          placeholder="Username"
+          placeholder="Channel"
           className={showInvalid ? "username-field__input--invalid" : undefined}
           autoComplete="username"
           spellCheck={false}
