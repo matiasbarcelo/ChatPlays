@@ -2564,14 +2564,12 @@ input:disabled {
   border-bottom-color: #1a1a1a;
 }
 
+/* Sits inside the government chat panel, which supplies the border. */
 .platform-chat {
   flex: 1;
   min-height: 0;
   display: flex;
-  border: 1px solid var(--app-card-border);
-  border-radius: 6px;
   overflow: hidden;
-  background: var(--app-card-bg);
 }
 
 .platform-chat__frame {
