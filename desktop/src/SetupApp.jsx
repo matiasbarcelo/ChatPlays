@@ -458,6 +458,14 @@ export function SetupApp() {
   // Automatic linking of the virtual controller to VisualBoyAdvance is not
   // solved yet, so the control is locked to Manual until it is.
   const linkMode = "manual";
+  const platformChat =
+    chatSource === "platform" ? (
+      <PlatformChat
+        platform={main?.streaming_platform}
+        login={main?.twitch_username_verified ? main.twitch_username.trim().toLowerCase() : ""}
+        dark={chatTheme === "dark"}
+      />
+    ) : null;
 
   return (
     <div className="setup-shell panel">
@@ -905,13 +913,7 @@ export function SetupApp() {
       )}
 
       <section className="setup-layout__chat">
-        {chatSource === "platform" ? (
-          <PlatformChat
-            platform={main?.streaming_platform}
-            login={main?.twitch_username_verified ? main.twitch_username.trim().toLowerCase() : ""}
-            dark={chatTheme === "dark"}
-          />
-        ) : setup.government === "anarchy" ? (
+        {setup.government === "anarchy" ? (
           <AnarchyPanel
             queue={setup.anarchy_queue}
             queueUsers={setup.anarchy_queue_users}
@@ -921,6 +923,7 @@ export function SetupApp() {
             onSubmit={(text) => api.submitInput(text)}
             chatTheme={chatTheme}
             onThemeToggle={() => setChatTheme(t => t === "dark" ? "light" : "dark")}
+            replaceChat={platformChat}
           />
         ) : setup.government === "chat_decides" ? (
           <ChatDecidesPanel
@@ -961,6 +964,7 @@ export function SetupApp() {
             onToggleTimer={() => api.toggleDemocracyTimer()}
             chatTheme={chatTheme}
             onThemeToggle={() => setChatTheme(t => t === "dark" ? "light" : "dark")}
+            replaceChat={platformChat}
           />
         ) : (
           <DemocracyPanel
@@ -984,6 +988,7 @@ export function SetupApp() {
             onToggleTimer={() => api.toggleDemocracyTimer()}
             chatTheme={chatTheme}
             onThemeToggle={() => setChatTheme(t => t === "dark" ? "light" : "dark")}
+            replaceChat={platformChat}
           />
         )}
 

@@ -106,6 +106,7 @@ export function AnarchyPanel({
   chatTheme = "dark",
   onThemeToggle,
   displayOnly = false,
+  replaceChat = null,
 }) {
   const items = countdownLine ? [countdownLine] : (flashLine ? [flashLine] : queue);
   return (
@@ -115,10 +116,14 @@ export function AnarchyPanel({
         chatTheme={chatTheme}
         onThemeToggle={displayOnly ? undefined : onThemeToggle}
       />
-      <div className="chat-panel__body">
-        <ChatQueue items={items} users={items === queue ? queueUsers : undefined} username={username} />
-      </div>
-      {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
+      {replaceChat ?? (
+        <>
+          <div className="chat-panel__body">
+            <ChatQueue items={items} users={items === queue ? queueUsers : undefined} username={username} />
+          </div>
+          {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
+        </>
+      )}
     </div>
   );
 }
@@ -143,6 +148,7 @@ export function DemocracyPanel({
   chatTheme = "dark",
   onThemeToggle,
   displayOnly = false,
+  replaceChat = null,
 }) {
   return (
     <div className={`chat-panel${chatTheme === "light" ? " chat-panel--light" : ""}`}>
@@ -193,14 +199,18 @@ export function DemocracyPanel({
           ))}
         </div>
       </div>
-      <div className="chat-panel__body">
-        <ChatQueue
-          items={countdownLine ? [countdownLine] : (flashLine ? [flashLine] : queue)}
-          users={countdownLine || flashLine ? undefined : queueUsers}
-          username={username}
-        />
-      </div>
-      {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
+      {replaceChat ?? (
+        <>
+          <div className="chat-panel__body">
+            <ChatQueue
+              items={countdownLine ? [countdownLine] : (flashLine ? [flashLine] : queue)}
+              users={countdownLine || flashLine ? undefined : queueUsers}
+              username={username}
+            />
+          </div>
+          {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
+        </>
+      )}
     </div>
   );
 }
@@ -293,6 +303,7 @@ export function ChatDecidesPanel({
   chatTheme = "dark",
   onThemeToggle,
   displayOnly = false,
+  replaceChat = null,
 }) {
   const activeLabel = activeGovernment === "democracy" ? "Democracy" : "Anarchy";
   const items = countdownLine ? [countdownLine] : (flashLine ? [flashLine] : queue);
@@ -415,10 +426,14 @@ export function ChatDecidesPanel({
           </>
         )}
       </div>
-      <div className="chat-panel__body">
-        <ChatQueue items={items} users={items === queue ? queueUsers : undefined} username={username} />
-      </div>
-      {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
+      {replaceChat ?? (
+        <>
+          <div className="chat-panel__body">
+            <ChatQueue items={items} users={items === queue ? queueUsers : undefined} username={username} />
+          </div>
+          {!displayOnly && <ChatInputForm onSubmit={onSubmit} username={username} />}
+        </>
+      )}
     </div>
   );
 }
