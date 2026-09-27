@@ -240,6 +240,7 @@ function formatInputsForClipboard(inputs, settings = {}) {
     allowInputRepeat = true,
     allowInputSequences = false,
     maxInputSequenceLength = 3,
+    maxMessageSeconds = 30,
     enabledTimingModes = ["tap", "press", "hold"],
     government = "anarchy",
     chatDecidesSwitchThreshold = 75,
@@ -297,6 +298,13 @@ function formatInputsForClipboard(inputs, settings = {}) {
     lines.push("• Add 1–9 at the end to repeat (example: a3)");
   }
 
+  if (allowInputRepeat || allowCustomInputDuration || allowInputSequences) {
+    const messageLimit = Math.max(maxMessageSeconds, allowCustomInputDuration ? maxInputDuration : 0);
+    lines.push(
+      `• One message can run for at most ${messageLimit}s in total, repeats and chains included — longer ones are ignored`
+    );
+  }
+
   lines.push(
     "",
     "Anarchy: each valid input is queued and played in order.",
@@ -338,6 +346,7 @@ function SetupControllerFooter({
   allowInputRepeat,
   allowInputSequences,
   maxInputSequenceLength,
+  maxMessageSeconds,
   enabledTimingModes,
   government,
   chatDecidesSwitchThreshold,
@@ -358,6 +367,7 @@ function SetupControllerFooter({
     allowInputRepeat,
     allowInputSequences,
     maxInputSequenceLength,
+    maxMessageSeconds,
     enabledTimingModes,
     government,
     chatDecidesSwitchThreshold,
@@ -843,6 +853,7 @@ export function SetupApp() {
           allowInputRepeat={setup.allow_input_repeat !== false}
           allowInputSequences={!!setup.allow_input_sequences}
           maxInputSequenceLength={setup.max_input_sequence_length ?? 3}
+          maxMessageSeconds={setup.max_message_seconds}
           enabledTimingModes={enabledTimingModes}
           government={setup.government}
           chatDecidesSwitchThreshold={setup.chat_decides_switch_threshold ?? 75}

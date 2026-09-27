@@ -11,13 +11,14 @@ from dataclasses import dataclass, field
 from typing import Callable, Deque, List, Optional, Tuple
 
 from ChatPlays import ChatPlays
-from input import Input, InputSequence, WAIT_INPUT
+from input import Input, InputSequence, MAX_MESSAGE_SECONDS, WAIT_INPUT
 
 logger = logging.getLogger(__name__)
 
 DEMOCRACY_LEADER_SLOTS = 7
 CHAT_DECIDES_MODE = "chat_decides"
 GOVERNANCE_VOTE_CHOICES = ("anarchy", "democracy")
+FAKE_CHAT_DURATIONS = (0.5, 1, 1.5, 2, 3, 5, 10)
 
 # Chat panel looks, selectable in Setup/Test and mirrored by the OBS overlay.
 CHAT_THEMES = ("dark", "light")
@@ -151,6 +152,8 @@ class SetupTestState:
     allow_input_repeat: bool = True
     allow_input_sequences: bool = False
     max_input_sequence_length: int = 3
+    # A message's total run time is capped at max(this, max_input_duration).
+    max_message_seconds: int = MAX_MESSAGE_SECONDS
     chat_decides_default_gov: str = "anarchy"
     chat_decides_switch_threshold: int = 75
     chat_decides_vote_ttl_minutes: int = 5
@@ -696,14 +699,52 @@ class SetupTestService:
                     self.state.executing_input = ""
                 self._notify()
 
-    def _pick_fake_anarchy_input(self, pool: List[str]) -> str:
-        return random.choice(pool).lower()
+    def _fake_chat_part(self, pool: List[str]) -> str:
+        st = self.program.setupTest
+        name = random.choice(pool).lower()
+        roll = random.random()
+        prefix = ""
+        timing_modes = [mode for mode in ("tap", "press", "hold") if st.isTimingModeEnabled(mode)]
+        if roll < 0.25 and st.getAllowTimingPrefixes() and timing_modes:
+            mode = random.choice(timing_modes)
+            prefix = random.choice((mode, mode[0]))
+        elif roll < 0.4 and st.getAllowCustomInputDuration():
+            durations = [d for d in FAKE_CHAT_DURATIONS if d <= st.getMaxTimeLength()]
+            if durations:
+                prefix = f"({random.choice(durations):g})"
+        suffix = ""
+        if name != WAIT_INPUT and st.getAllowInputRepeat() and random.random() < 0.2:
+            suffix = str(random.randint(2, 5))
+        return f"{prefix}{name}{suffix}"
 
-    def _pick_fake_democracy_input(self, pool: List[str]) -> str:
-        vote_list = self.program.setupTest.getVoteList()
-        if vote_list and random.random() < 0.65:
-            return random.choice(list(vote_list.keys()))
-        return random.choice(pool).lower()
+    def _fake_chat_command(self, pool: List[str]) -> Optional[str]:
+        """A line like viewers type, using only the syntax the chat rules allow:
+        tap/press/hold prefixes, custom durations, repeats and sequences.
+
+        Every candidate is checked against the current rules; None when no
+        allowed line could be made (e.g. every input is disabled).
+        """
+        st = self.program.setupTest
+        for _ in range(5):
+            count = 1
+            max_length = st.getMaxInputSequenceLength()
+            if st.getAllowInputSequences() and max_length > 1 and random.random() < 0.2:
+                count = random.randint(2, max_length)
+            text = ",".join(self._fake_chat_part(pool) for _ in range(count))
+            if self._is_valid_chat_command(text):
+                return text
+        plain = [name.lower() for name in pool if self._is_valid_chat_command(name.lower())]
+        return random.choice(plain) if plain else None
+
+    def _pick_fake_anarchy_input(self, pool: List[str]) -> Optional[str]:
+        return self._fake_chat_command(pool)
+
+    def _pick_fake_democracy_input(self, pool: List[str]) -> Optional[str]:
+        # Pile onto an existing vote, but only one that the current rules still allow.
+        votes = [text for text in self.program.setupTest.getVoteList() if self._is_valid_chat_command(text)]
+        if votes and random.random() < 0.65:
+            return random.choice(votes)
+        return self._fake_chat_command(pool)
 
     def _roll_fake_chat_input(self, pool: List[str]):
         if self._is_chat_decides_mode():
@@ -711,18 +752,17 @@ class SetupTestService:
             if text in GOVERNANCE_VOTE_CHOICES:
                 self._enqueue_chat_decides_governance_vote(text)
                 return
-            game_pool = [name for name in pool if name not in GOVERNANCE_VOTE_CHOICES]
-            if self._effective_government() == "democracy":
-                self._enqueue_democracy_vote(self._pick_fake_democracy_input(game_pool or pool))
+            pool = [name for name in pool if name not in GOVERNANCE_VOTE_CHOICES]
+            if not pool:
                 return
-            self._append_chat_line(self._pick_fake_anarchy_input(game_pool or pool))
-            return
-        if self.state.government == "democracy":
+        if self._effective_government() == "democracy":
             text = self._pick_fake_democracy_input(pool)
-            self._enqueue_democracy_vote(text)
+            if text:
+                self._enqueue_democracy_vote(text)
             return
         text = self._pick_fake_anarchy_input(pool)
-        self._append_chat_line(text)
+        if text:
+            self._append_chat_line(text)
 
     def _default_execution_seconds(self) -> float:
         mode = self.state.default_time_length or "press"
@@ -773,14 +813,13 @@ class SetupTestService:
 
     def _run_fake_chat_roll(self, count: int):
         try:
-            pool = self._valid_test_inputs()
-            if not pool and not self._is_chat_decides_mode():
-                return
             rolled = 0
             while True:
                 with self._lock:
                     if not self.state.fake_chat_running:
                         break
+                # Re-read every roll so inputs disabled mid-roll stop appearing.
+                pool = self._valid_test_inputs()
                 self._roll_fake_chat_input(pool)
                 self._notify()
                 rolled += 1
