@@ -44,7 +44,10 @@ API_PORT = 8765
 # OBS browser sources point at this server rather than at the Vite dev server,
 # so the URL a streamer copies keeps working in a packaged build too.
 VITE_DEV_URL = "http://127.0.0.1:5173"
-FRONTEND_DIST = Path(__file__).resolve().parent / "desktop" / "dist"
+FRONTEND_DIST = Path(
+    os.environ.get("CHATPLAYS_FRONTEND_DIST", "").strip()
+    or Path(__file__).resolve().parent / "desktop" / "dist"
+)
 
 # Any web page the user has open can reach 127.0.0.1, so every control
 # endpoint requires this per-launch secret. Electron generates it and passes

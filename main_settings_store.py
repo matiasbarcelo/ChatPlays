@@ -2,10 +2,10 @@
 
 import json
 import logging
-import os
-import platform
 from pathlib import Path
 from typing import Any
+
+from app_paths import user_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -17,22 +17,8 @@ _CACHE_KEYS = (
 )
 
 
-def _user_settings_dir() -> Path:
-    override = os.environ.get("CHATPLAYS_USER_DATA", "").strip()
-    if override:
-        return Path(override)
-
-    system = platform.system()
-    if system == "Windows":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
-        return base / "ChatPlays"
-    if system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "ChatPlays"
-    return Path.home() / ".config" / "chatplays"
-
-
 def _settings_file() -> Path:
-    return _user_settings_dir() / "main_settings.json"
+    return user_data_dir() / "main_settings.json"
 
 
 def load_main_settings_cache() -> dict[str, Any]:

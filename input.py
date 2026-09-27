@@ -14,6 +14,13 @@ logger.setLevel(logging.DEBUG)
 
 WAIT_INPUT = "wait"
 
+# One chat message can't occupy the controller longer than this (or than the
+# max custom duration, when custom durations are on and that is higher),
+# however its durations, repeats and sequence parts multiply out.
+MAX_MESSAGE_SECONDS = 30
+# Controller.pressButton pauses this long between repeats.
+REPEAT_GAP_SECONDS = 0.1
+
 
 
 
@@ -74,6 +81,11 @@ def split_input_sequence(text: str) -> list[str]:
 
 
 
+def _input_seconds(part, valueClass) -> float:
+    repeat = int(part.getRepeatAmount() or 1)
+    return valueClass.getDurationForInput(part) * repeat + REPEAT_GAP_SECONDS * (repeat - 1)
+
+
 class InputSequence:
 
     def __init__(self, string, valueClass=None):
@@ -92,6 +104,15 @@ class InputSequence:
             )
 
         self.inputs = [Input(part, valueClass) for part in parts]
+
+        total_seconds = sum(_input_seconds(part, valueClass) for part in self.inputs)
+        limit = MAX_MESSAGE_SECONDS
+        if valueClass.getAllowCustomInputDuration():
+            limit = max(limit, valueClass.getMaxTimeLength())
+        if total_seconds > limit:
+            raise ValueError(
+                f"Message would run {total_seconds:g}s, over the {limit:g}s limit: {string!r}"
+            )
 
 
 

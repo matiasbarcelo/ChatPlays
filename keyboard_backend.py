@@ -5,7 +5,8 @@ import logging
 import platform
 import subprocess
 import time
-from pathlib import Path
+
+from app_paths import config_file
 
 IS_MAC = platform.system() == "Darwin"
 
@@ -91,7 +92,7 @@ DEFAULT_KEYBOARD_MAPS = {
 ANALOG_INPUTS = {"lstick", "rstick", "left_joystick_float", "right_joystick_float",
                  "left_trigger_float", "right_trigger_float"}
 
-CONFIG_PATH = Path(__file__).resolve().parent / "KeyboardMappings.json"
+CONFIG_PATH = config_file("KeyboardMappings.json")
 
 if IS_MAC:
     SPECIAL_KEYS = {

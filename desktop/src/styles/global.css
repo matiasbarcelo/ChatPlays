@@ -1988,6 +1988,25 @@ input:disabled {
   border: none;
 }
 
+.chat-overlay .chat-panel__queue {
+  font-size: 16px;
+  scrollbar-width: none;
+}
+
+.chat-overlay .chat-panel__queue::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-overlay .chat-panel__queue li {
+  padding: 6px 0;
+}
+
+/* At this size a long name plus a long input won't fit on one line. */
+.chat-overlay .chat-panel__queue-item {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
 /* Nothing in the overlay is clickable — it is a display surface. */
 .controller-overlay .controller-hit {
   cursor: default;
