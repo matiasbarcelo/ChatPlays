@@ -7,15 +7,13 @@ import { AnarchyPanel, DemocracyPanel, ChatDecidesPanel } from "./components/Gov
  * the test input box, so it matches the panel in the app exactly.
  *
  * `?theme=light` renders the light variant; the default is dark.
- * `?user=Name` prefixes each line with a name, as the panel does in the app.
+ * `?user=Name` sets the name shown on lines with no sender (fake chat); default "User".
  */
 export function ChatOverlayApp() {
-  const { ready, setup, main } = useChatPlaysState("setup", { overlay: true });
+  const { ready, setup } = useChatPlaysState("setup", { overlay: true });
   const params = new URLSearchParams(window.location.search);
   const chatTheme = params.get("theme") === "light" ? "light" : "dark";
-  const username =
-    params.get("user") ??
-    (main?.twitch_display_name?.trim() || main?.twitch_username?.trim() || "");
+  const username = params.get("user") ?? "User";
 
   if (!ready || !setup) return <div className="chat-overlay" />;
 
