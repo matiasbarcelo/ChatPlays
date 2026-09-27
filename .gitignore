@@ -7,6 +7,11 @@ virt/
 desktop/node_modules/
 desktop/dist/
 
+# Packaging outputs
+.build-venv/
+desktop/build/
+desktop/release/
+
 # Emulator binaries (install locally; do not commit)
 visualboyadvance-m.exe
 VisualBoyAdvance-M.exe

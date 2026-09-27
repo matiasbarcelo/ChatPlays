@@ -20,21 +20,15 @@ let mainWindow = null;
 let setupWindow = null;
 let monitorWindow = null;
 
-function projectRoot() {
-  if (isDev) {
-    // electron/ -> desktop/ -> repo root
-    return path.join(__dirname, "..", "..");
-  }
-  return path.join(process.resourcesPath, "python");
-}
+// electron/ -> desktop/ -> repo root
+const REPO_ROOT = path.join(__dirname, "..", "..");
 
 function pythonExecutable() {
-  const root = projectRoot();
   const venvCandidates = [
-    path.join(root, "virt", "Scripts", "python.exe"),
+    path.join(REPO_ROOT, "virt", "Scripts", "python.exe"),
     // MSYS/MinGW-created venvs use the POSIX layout but keep the .exe suffix
-    path.join(root, "virt", "bin", "python.exe"),
-    path.join(root, "virt", "bin", "python"),
+    path.join(REPO_ROOT, "virt", "bin", "python.exe"),
+    path.join(REPO_ROOT, "virt", "bin", "python"),
   ];
   for (const candidate of venvCandidates) {
     if (fs.existsSync(candidate)) return candidate;
@@ -54,15 +48,36 @@ function pythonExecutable() {
 }
 
 function startPythonBackend() {
-  const root = projectRoot();
-  const script = path.join(root, "api_server.py");
   const env = { ...process.env, PYTHONUNBUFFERED: "1", CHATPLAYS_API_TOKEN: API_TOKEN };
   delete env.PYTHONPATH;
-  pythonProcess = spawn(pythonExecutable(), [script], {
-    cwd: root,
-    stdio: "inherit",
-    env,
-  });
+
+  if (isDev) {
+    pythonProcess = spawn(pythonExecutable(), [path.join(REPO_ROOT, "api_server.py")], {
+      cwd: REPO_ROOT,
+      stdio: "inherit",
+      env,
+    });
+  } else {
+    const userData = app.getPath("userData");
+    const logDir = app.getPath("logs");
+    fs.mkdirSync(userData, { recursive: true });
+    fs.mkdirSync(logDir, { recursive: true });
+    const log = fs.openSync(path.join(logDir, "backend.log"), "w");
+    pythonProcess = spawn(
+      path.join(process.resourcesPath, "backend", "chatplays-backend.exe"),
+      [],
+      {
+        cwd: userData,
+        stdio: ["ignore", log, log],
+        windowsHide: true,
+        env: {
+          ...env,
+          CHATPLAYS_USER_DATA: userData,
+          CHATPLAYS_FRONTEND_DIST: path.join(process.resourcesPath, "frontend"),
+        },
+      }
+    );
+  }
   pythonProcess.on("exit", (code) => {
     console.log(`Python backend exited with code ${code}`);
   });

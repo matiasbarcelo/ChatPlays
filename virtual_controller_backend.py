@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Dict
+
+from app_paths import config_file
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = Path(__file__).resolve().parent / "VirtualControllerMappings.json"
+CONFIG_PATH = config_file("VirtualControllerMappings.json")
 
 DEFAULT_VIRTUAL_MAPS: Dict[str, Dict[str, str]] = {
     "GBAController": {
