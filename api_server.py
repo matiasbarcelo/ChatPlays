@@ -301,15 +301,23 @@ def _persist_main_settings_cache():
             "twitch_username_verified": main_state.twitch_username_verified,
             "twitch_display_name": main_state.twitch_display_name,
             "streaming_platform": main_state.streaming_platform,
+            "program_status": main_state.program_status,
         }
     )
 
 
+# Applied at startup rather than here: switching on launches the emulator and
+# joins chat, which needs the event loop.
+_resume_power_on = False
+
+
 def _load_cached_main_settings():
+    global _resume_power_on
     cached = load_main_settings_cache()
     if not cached:
         return
 
+    _resume_power_on = bool(cached.get("program_status"))
     platform = str(cached.get("streaming_platform", "") or "twitch").strip() or "twitch"
     main_state.streaming_platform = platform
 
@@ -482,7 +490,11 @@ def chat_overlay(request: Request):
 async def on_startup():
     global loop
     loop = asyncio.get_running_loop()
-    _sync_emulators_for_power_state(live=main_state.program_status)
+    if _resume_power_on and _live_channel():
+        logger.info("ChatPlays was On when it last closed; switching back On.")
+        _set_power(True)
+    else:
+        _sync_emulators_for_power_state(live=main_state.program_status)
     _schedule_broadcast()
 
 
@@ -742,6 +754,7 @@ def _set_power(on: bool):
         return
     main_state.program_status = on
     service.program.setStatus()
+    _persist_main_settings_cache()
     _sync_emulators_for_power_state(live=on)
     _sync_live_chat()
 

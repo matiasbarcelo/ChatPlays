@@ -564,11 +564,12 @@ def _vba_windows_present() -> bool:
 
 
 def ensure_vba_emulator_running() -> bool:
-    """Launch VisualBoy Advance-M when no instance is running."""
+    """Launch VisualBoy Advance-M with its most recent game when no instance is running."""
     if _vba_windows_present():
         return True
     return launch_vba_emulator(
-        EmulatorDetection(found=False, emulator_id="visualboyadvance")
+        EmulatorDetection(found=False, emulator_id="visualboyadvance"),
+        _read_vba_recent_rom(),
     )
 
 

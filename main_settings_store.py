@@ -14,6 +14,7 @@ _CACHE_KEYS = (
     "twitch_username_verified",
     "twitch_display_name",
     "streaming_platform",
+    "program_status",
 )
 
 
