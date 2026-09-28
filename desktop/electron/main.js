@@ -15,7 +15,14 @@ const MAIN_CONTENT_WIDTH = 400;
 const MAIN_CONTENT_HEIGHT = 800;
 const isDev = !app.isPackaged;
 
+const BACKEND_RESTART_DELAY_MS = 2000;
+const BACKEND_QUICK_FAILURE_MS = 10000;
+const BACKEND_MAX_QUICK_FAILURES = 5;
+
 let pythonProcess = null;
+let backendStartedAt = 0;
+let backendQuickFailures = 0;
+let backendStopping = false;
 let mainWindow = null;
 let setupWindow = null;
 let monitorWindow = null;
@@ -48,11 +55,13 @@ function pythonExecutable() {
 }
 
 function startPythonBackend() {
+  if (backendStopping) return;
   const env = { ...process.env, PYTHONUNBUFFERED: "1", CHATPLAYS_API_TOKEN: API_TOKEN };
   delete env.PYTHONPATH;
+  let child;
 
   if (isDev) {
-    pythonProcess = spawn(pythonExecutable(), [path.join(REPO_ROOT, "api_server.py")], {
+    child = spawn(pythonExecutable(), [path.join(REPO_ROOT, "api_server.py")], {
       cwd: REPO_ROOT,
       stdio: "inherit",
       env,
@@ -62,8 +71,9 @@ function startPythonBackend() {
     const logDir = app.getPath("logs");
     fs.mkdirSync(userData, { recursive: true });
     fs.mkdirSync(logDir, { recursive: true });
-    const log = fs.openSync(path.join(logDir, "backend.log"), "w");
-    pythonProcess = spawn(
+    // Append after a restart so the crash that caused it stays in the log.
+    const log = fs.openSync(path.join(logDir, "backend.log"), backendStartedAt ? "a" : "w");
+    child = spawn(
       path.join(process.resourcesPath, "backend", "chatplays-backend.exe"),
       [],
       {
@@ -77,13 +87,32 @@ function startPythonBackend() {
         },
       }
     );
+    fs.closeSync(log);
   }
-  pythonProcess.on("exit", (code) => {
+
+  pythonProcess = child;
+  backendStartedAt = Date.now();
+  child.on("exit", (code) => {
     console.log(`Python backend exited with code ${code}`);
+    if (pythonProcess !== child) return;
+    pythonProcess = null;
+    if (backendStopping) return;
+
+    // Keep a long-running stream alive through a crash, but stop retrying if
+    // it dies immediately every time (e.g. the port is already in use).
+    const quickFailure = Date.now() - backendStartedAt < BACKEND_QUICK_FAILURE_MS;
+    backendQuickFailures = quickFailure ? backendQuickFailures + 1 : 0;
+    if (backendQuickFailures >= BACKEND_MAX_QUICK_FAILURES) {
+      console.log("Python backend keeps failing on startup; not restarting it.");
+      return;
+    }
+    console.log("Restarting Python backend...");
+    setTimeout(startPythonBackend, BACKEND_RESTART_DELAY_MS);
   });
 }
 
 function stopPythonBackend() {
+  backendStopping = true;
   if (pythonProcess) {
     pythonProcess.kill();
     pythonProcess = null;
