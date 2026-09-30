@@ -162,12 +162,61 @@
     .button.size-xl { padding: 25px 50px; font-size: 20px; border-radius: 6px; }
     .button svg { width: 1em; height: 1em; fill: currentColor; }
 
-    /* ---------- Hero / mailing list (f6b8356) ---------- */
+    /* ---------- Hero: logo + download (f6b8356) ---------- */
     .hero { background: var(--dark) center/cover no-repeat; color: #fff; }
     .hero > .overlay { background: radial-gradient(circle at 25% 40%, rgba(255,255,255,.10), transparent 60%); }
-    .hero h2 { font-family: var(--e-global-typography-primary-font-family); font-size: 40px; font-weight: 600; }
-    .hero h4 { font-weight: 400; font-size: 20px; opacity: .8; margin-top: -8px; }
     .hero-logo { width: 100%; max-width: 480px; margin: 0 auto; }
+
+    .download { align-self: flex-start; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 30px;
+      color: #1a1a1a;
+      background: #fff;
+      border-radius: 8px;
+      text-decoration: none;
+      box-shadow: 0 6px 20px rgba(0,0,0,.35);
+      transition: transform .2s, box-shadow .2s, background .2s;
+    }
+    .download-btn:hover { background: #e6e6e6; transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,.45); }
+    .download-btn:focus-visible { outline: 3px solid #b0b0b0; outline-offset: 3px; }
+    .download-btn__icon { width: 30px; height: 30px; fill: currentColor; flex-shrink: 0; }
+    .download-btn__text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
+    .download-btn__label { font-size: 22px; font-weight: 700; }
+    .download-btn__sub { font-size: 14px; opacity: .7; margin-top: 3px; }
+    .download-meta { margin: 0; font-size: 14px; color: #b0b0b0; }
+
+    /* ---------- Showcase: live demo (left) + mailing list (right) ---------- */
+    /* Light panel: off-white base with a broad white glow. */
+    .showcase { background: #f4f4f4; color: #1a1a1a; }
+    .showcase > .overlay { background: radial-gradient(ellipse at 50% 40%, #fff 0%, #fff 25%, rgba(255,255,255,0) 80%); }
+    /* Stream + chat at full size: video 764px + 16px gap + 340px chat. */
+    .showcase-inner { max-width: calc(1120px + 48px); }
+    .live { display: flex; flex-direction: column; gap: 20px; width: 100%; }
+    .live-heading { text-align: center; }
+    .live h2 { font-size: 40px; font-weight: 600; }
+    .live h4 { font-weight: 400; font-size: 20px; color: #595959; margin-top: 6px; }
+    .stream { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
+    .stream-player { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden; }
+    .stream-chat { position: relative; min-height: 0; background: #18181b; border-radius: 8px; overflow: hidden; }
+    .stream iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .stream-link { margin: 0; text-align: center; font-size: 14px; }
+    .stream-link a { color: #595959; }
+    .stream-link a:hover { color: #1a1a1a; }
+
+    /* ---------- Mailing list (own panel, same background as the footer) ---------- */
+    .mailing-panel { background: var(--dark); color: #fff; }
+    .mailing-panel .container { justify-content: center; }
+    .mailing h2 { font-family: var(--e-global-typography-primary-font-family); font-size: 40px; font-weight: 600; white-space: nowrap; }
+    .mailing h4 { font-weight: 400; font-size: 20px; opacity: .8; margin-top: 6px; }
+    .mailing .form-note { color: #b0b0b0; }
+    /* Only as wide as the heading, so the subheading centres under it
+       and the email form matches its width. */
+    .signup { text-align: center; }
+    /* width:0 + min-width:100% fills the heading's width without widening it. */
+    .signup-form { width: 0; min-width: 100%; margin-top: 20px; text-align: left; }
 
     .form { display: flex; flex-wrap: wrap; margin: 0 -5px; }
     .form .field-group { padding: 0 5px; }
@@ -185,6 +234,8 @@
     .form .button { width: 100%; min-height: 40px; }
     .form-note { font-size: 14px; margin: 6px 0 0; }
     .form-note:empty { display: none; }
+    .form-privacy { margin: 10px 0 0; font-size: 12px; line-height: 1.4; color: #8a8a8a; text-align: center; }
+    .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
     /* ---------- What is ChatPlays? (eed3131 / cd74a9b) ---------- */
@@ -217,6 +268,18 @@
     /* ---------- Footer (elementor-250) ---------- */
     .site-footer { background: var(--dark); color: #c8c8c8; font-size: 14px; }
     .site-footer { padding: 28px 0; }
+    /* Divider from the mailing panel above (same background): a thin line that
+       fades out toward both edges. */
+    .site-footer::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: min(1140px, calc(100% - 48px));
+      height: 1px;
+      transform: translateX(-50%);
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.22) 20%, rgba(255,255,255,.22) 80%, transparent);
+    }
     .site-footer .wrap { gap: 12px; }
     .site-footer p { margin: 0; }
     .site-footer a { color: inherit; text-decoration: none; }
@@ -250,9 +313,14 @@
       .title-xxl { font-size: 38px; }
       .title-xl { font-size: 28px; }
       .title-large { font-size: 20px; }
-      .hero h2 { font-size: 30px; }
+      .mailing h2 { font-size: 30px; white-space: normal; }
+      .live h2 { font-size: 30px; }
+      .stream { grid-template-columns: 1fr; }
+      .stream-chat { height: 420px; }
       .container { padding: 0 16px; }
       .hero-logo { max-width: 320px; }
+      .download { align-self: center; }
+      .download-btn__label { font-size: 19px; }
       .button.size-xl { padding: 20px 30px; }
     }
   </style>
@@ -268,9 +336,11 @@
           <nav class="nav" aria-label="Main">
             <ul>
               <li><a href="#" class="active" aria-current="page">Home</a></li>
+              <!-- [hidden]
               <li><a href="#get-involved">Get Involved</a></li>
               <li><a href="https://www.paypal.com/donate/?hosted_button_id=GMMRAE3Y6TFHU">Donate</a></li>
               <li><a href="https://docs.google.com/forms/d/e/1FAIpQLScUejEYWGvGnN2f2b4zRGxtxPtXPKO5mCVdTkQhhSta7hOp6w/viewform?vc=0&amp;c=0&amp;w=1&amp;flr=0">Survey</a></li>
+              -->
             </ul>
           </nav>
         </div>
@@ -280,24 +350,88 @@
 
   <main id="content" class="site-main" role="main">
 
-    <!-- Hero: logo + mailing list (f6b8356) -->
+    <!-- Hero: logo + download (f6b8356) -->
     <section class="section hero panel">
       <div class="overlay"></div>
       <div class="container">
         <div class="col col-50">
           <div class="wrap">
-                        <img src="images/chatplays-logo-light.png"
+            <img src="images/chatplays-logo-light.png"
                  data-fallback="https://web.archive.org/web/20240419184130im_/https://i0.wp.com/chatplays.org/wp-content/uploads/2022/06/Chat-plays-transparent-e1654671926779.png?w=1478&amp;ssl=1"
                  width="800" height="381" alt="ChatPlays" class="hero-logo" fetchpriority="high">
           </div>
         </div>
         <div class="col col-50">
           <div class="wrap">
+            <div class="download">
+              <!-- The GitHub Pages deploy (.github/workflows/pages.yml, .github/scripts/set_download_link.py)
+                   rewrites this href and the version below to the newest pre-release's Windows
+                   installer. Locally, or if no pre-release exists, it opens the releases page. -->
+              <a class="download-btn" href="https://github.com/matiasbarcelo/ChatPlays/releases" id="download-windows">
+                <svg class="download-btn__icon" aria-hidden="true" viewBox="0 0 24 24">
+                  <rect x="1" y="1" width="10.5" height="10.5"/>
+                  <rect x="12.5" y="1" width="10.5" height="10.5"/>
+                  <rect x="1" y="12.5" width="10.5" height="10.5"/>
+                  <rect x="12.5" y="12.5" width="10.5" height="10.5"/>
+                </svg>
+                <span class="download-btn__text">
+                  <span class="download-btn__label">Download for Windows</span>
+                  <span class="download-btn__sub">64-bit (x64)</span>
+                </span>
+              </a>
+              <p class="download-meta"><span id="download-version">Version 0.1.0</span> &middot; Windows 10 &amp; 11</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live demo stream [hidden]
+    <section class="section showcase panel" id="live">
+      <div class="overlay"></div>
+      <div class="container showcase-inner">
+        <div class="live">
+          <div class="live-heading">
+            <h2>Try it live</h2>
+            <h4>Type commands in the chat to play along</h4>
+          </div>
+          Placeholder channel until the ChatPlays demo stream is set up:
+               change data-channel to switch it. Twitch requires the embedding
+               site's domain as ?parent=, which the script fills in at load.
+          <div class="stream" data-channel="chatplaysdemo">
+            <div class="stream-player">
+              <iframe title="Twitch live stream" allowfullscreen
+                      allow="autoplay; fullscreen; picture-in-picture"></iframe>
+            </div>
+            <div class="stream-chat">
+              <iframe title="Twitch live chat"></iframe>
+            </div>
+          </div>
+          <p class="stream-link"><a href="https://www.twitch.tv/chatplaysdemo" target="_blank" rel="noopener">Open the stream on Twitch</a></p>
+        </div>
+      </div>
+    </section>
+    -->
+
+    <!-- Mailing list: dark, same as the footer -->
+    <section class="section mailing-panel panel">
+      <div class="container">
+        <div class="mailing">
+          <div class="signup">
             <h2>Get on the mailing list</h2>
             <h4>(you wouldn't want to miss out)</h4>
 
-            <div class="inner">
-              <form class="form" id="newsletter" name="email" action="mailto:matias.e.barcelo@gmail.com?subject=ChatPlays%20mailing%20list" method="post" enctype="text/plain">
+            <div class="signup-form">
+              <!-- data-endpoint: the Google Apps Script web app URL (ends in /exec) that saves
+                   sign-ups to the Google Sheet; see website/google-apps-script/README.md.
+                   While it is empty, the form falls back to opening the visitor's email app. -->
+              <form class="form" id="newsletter" name="email" action="mailto:matias.e.barcelo@gmail.com?subject=ChatPlays%20mailing%20list" method="post" enctype="text/plain"
+                    data-endpoint="https://script.google.com/macros/s/AKfycbwzmfcT_t6Uvsge26BNwyCvmQNYXhP0kYHImIPrhwOvsLOJgkxCZdWWSzZmeEylhJjS/exec">
+                <!-- Honeypot: hidden from people, so only bots fill it in. -->
+                <div class="hp" aria-hidden="true">
+                  <label for="form-field-website">Website</label>
+                  <input type="text" name="website" id="form-field-website" tabindex="-1" autocomplete="off">
+                </div>
                 <div class="field-group col-80">
                   <label for="form-field-name" class="sr-only">Subscribe to the newsletter</label>
                   <input type="email" name="email" id="form-field-name" placeholder="Email" required aria-required="true">
@@ -307,13 +441,14 @@
                 </div>
               </form>
               <p class="form-note" id="form-note" role="status"></p>
+              <p class="form-privacy">We only use your email for ChatPlays updates. Signing up also records your approximate location, device and how you found us.</p>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- What is ChatPlays? (eed3131) -->
+    <!-- What is ChatPlays? (eed3131) [hidden]
     <section class="section what">
       <div class="container">
         <div class="col col-100">
@@ -323,8 +458,9 @@
         </div>
       </div>
     </section>
+    -->
 
-    <!-- Video (cd74a9b) -->
+    <!-- Video (cd74a9b) [hidden]
     <section class="section video-section">
       <div class="container">
         <div class="col col-100">
@@ -339,8 +475,9 @@
         </div>
       </div>
     </section>
+    -->
 
-    <!-- Platforms (780390a) -->
+    <!-- Platforms (780390a) [hidden]
     <section class="section platforms panel">
       <div class="overlay"></div>
       <div class="container">
@@ -369,8 +506,9 @@
         </div>
       </div>
     </section>
+    -->
 
-    <!-- Game Types (146edda) -->
+    <!-- Game Types (146edda) [hidden]
     <section class="section game-types panel">
       <div class="overlay"></div>
       <div class="container">
@@ -389,8 +527,9 @@
         </div>
       </div>
     </section>
+    -->
 
-    <!-- How can I get involved? (6ca61a9) -->
+    <!-- How can I get involved? (6ca61a9) [hidden]
     <section class="section involved" id="get-involved">
       <div class="container">
         <div class="col col-100">
@@ -413,6 +552,7 @@
         </div>
       </div>
     </section>
+    -->
 
   </main>
 
@@ -440,14 +580,122 @@
       if (img.complete && img.naturalWidth === 0) useFallback();
     });
 
-    // The original form posted to Elementor's WordPress backend; without it, hand off to the mail client.
+    // Twitch embeds only load when ?parent= names the domain hosting the page.
+    document.querySelectorAll('.stream[data-channel]').forEach(function (stream) {
+      var channel = encodeURIComponent(stream.dataset.channel);
+      var parent = encodeURIComponent(location.hostname || 'localhost');
+      stream.querySelector('.stream-player iframe').src =
+        'https://player.twitch.tv/?channel=' + channel + '&parent=' + parent + '&muted=true';
+      stream.querySelector('.stream-chat iframe').src =
+        'https://www.twitch.tv/embed/' + channel + '/chat?parent=' + parent + '&darkpopout';
+    });
+
+    // ---------- Mailing list sign-up ----------
+    // Sign-ups go to a Google Sheet through a Google Apps Script web app
+    // (website/google-apps-script/Code.gs), with visit details for analytics.
+
+    // Visit count and first-visit date live in this browser only.
+    var visit = { count: '', first: '' };
+    try {
+      visit.count = String(Number(localStorage.getItem('cp-visits') || 0) + 1);
+      visit.first = localStorage.getItem('cp-first-visit') || new Date().toISOString();
+      localStorage.setItem('cp-visits', visit.count);
+      localStorage.setItem('cp-first-visit', visit.first);
+    } catch (err) { /* storage blocked: leave blank */ }
+
+    function pad2(n) { return String(Math.floor(Math.abs(n))).padStart(2, '0'); }
+
+    function localTimestamp() {
+      var d = new Date(), off = -d.getTimezoneOffset();
+      return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' +
+        pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) +
+        ' UTC' + (off >= 0 ? '+' : '-') + pad2(off / 60) + ':' + pad2(off % 60);
+    }
+
+    function deviceType() {
+      var ua = navigator.userAgent;
+      if (/iPad|Tablet/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'tablet';
+      return /Mobi|Android|iPhone/i.test(ua) ? 'mobile' : 'desktop';
+    }
+
+    // Approximate location (country / region / city) from the visitor's IP.
+    // The IP itself is not stored; gives up after 2.5s so sign-up never stalls.
+    function lookupLocation() {
+      var timeout = new Promise(function (resolve) { setTimeout(function () { resolve({}); }, 2500); });
+      var lookup = fetch('https://get.geojs.io/v1/ip/geo.json')
+        .then(function (r) { return r.json(); })
+        .then(function (g) { return { country: g.country || '', region: g.region || '', city: g.city || '' }; })
+        .catch(function () { return {}; });
+      return Promise.race([lookup, timeout]);
+    }
+
+    function signupDetails(form) {
+      var q = new URLSearchParams(location.search);
+      var tz = '';
+      try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (err) {}
+      return {
+        email: form.elements.email.value.trim(),
+        website: form.elements.website.value,
+        timezone: tz,
+        localTime: localTimestamp(),
+        language: navigator.language || '',
+        device: deviceType(),
+        screen: screen.width + 'x' + screen.height,
+        userAgent: navigator.userAgent,
+        page: location.href,
+        referrer: document.referrer,
+        utmSource: q.get('utm_source') || '',
+        utmMedium: q.get('utm_medium') || '',
+        utmCampaign: q.get('utm_campaign') || '',
+        secondsOnPage: String(Math.round(performance.now() / 1000)),
+        visitCount: visit.count,
+        firstVisit: visit.first
+      };
+    }
+
+    var MSG_ERROR = 'Something went wrong. Please try again in a moment.';
+    var MSG_INVALID = "That email address doesn't look right. Please check it and try again.";
+
     document.getElementById('newsletter').addEventListener('submit', function (e) {
       e.preventDefault();
-      var email = document.getElementById('form-field-name').value.trim();
-      window.location.href = 'mailto:matias.e.barcelo@gmail.com?subject=' +
-        encodeURIComponent('ChatPlays mailing list') + '&body=' +
-        encodeURIComponent('Please add ' + email + ' to the ChatPlays mailing list.');
-      document.getElementById('form-note').textContent = 'Thanks! Your email app should open to finish signing up.';
+      var form = e.currentTarget;
+      var note = document.getElementById('form-note');
+      var button = form.querySelector('button[type="submit"]');
+      var endpoint = (form.dataset.endpoint || '').trim();
+      var details = signupDetails(form);
+
+      if (!endpoint) {
+        // No sheet connected yet: hand off to the visitor's email app instead.
+        window.location.href = 'mailto:matias.e.barcelo@gmail.com?subject=' +
+          encodeURIComponent('ChatPlays mailing list') + '&body=' +
+          encodeURIComponent('Please add ' + details.email + ' to the ChatPlays mailing list.');
+        note.textContent = 'Thanks! Your email app should open to finish signing up.';
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = 'Sending\u2026';
+      note.textContent = '';
+
+      lookupLocation()
+        .then(function (loc) {
+          // A simple form-encoded POST avoids a CORS preflight, which Apps Script can't answer.
+          return fetch(endpoint, { method: 'POST', body: new URLSearchParams(Object.assign(details, loc)) });
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (res.ok) {
+            note.textContent = res.duplicate ? "You're already on the list. Thanks!" : "Thanks! You're on the list.";
+            form.reset();
+          } else {
+            note.textContent = res.error === 'invalid_email' ? MSG_INVALID : MSG_ERROR;
+          }
+        })
+        .catch(function () { note.textContent = MSG_ERROR; })
+        .then(function () {
+          button.disabled = false;
+          button.textContent = 'Send';
+        });
     });
   </script>
 </body>
