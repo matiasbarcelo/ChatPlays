@@ -72,7 +72,12 @@ function doGet() {
 
 function getSheet_() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = spreadsheet.getSheetByName(SHEET_NAME) || spreadsheet.insertSheet(SHEET_NAME);
+  let sheet = spreadsheet.getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    // Reuse a new spreadsheet's blank first tab rather than leaving it empty beside ours.
+    const first = spreadsheet.getSheets()[0];
+    sheet = first.getLastRow() === 0 ? first.setName(SHEET_NAME) : spreadsheet.insertSheet(SHEET_NAME);
+  }
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(COLUMNS.map(([, header]) => header));
     sheet.getRange(1, 1, 1, COLUMNS.length).setFontWeight('bold');
