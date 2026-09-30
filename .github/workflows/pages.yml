@@ -1,0 +1,53 @@
+name: Deploy website to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - '.github/workflows/pages.yml'
+      - '.github/scripts/set_download_link.py'
+  # Re-deploy when a release changes, so the download button tracks the newest pre-release.
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Release events check out the tag; the site always comes from main.
+          ref: main
+
+      - name: Assemble site
+        run: |
+          mkdir _site
+          cp -r website/images website/fonts _site/
+          # index-v2.html is the live homepage; website/index.html is the archived recreation.
+          cp website/index-v2.html _site/index.html
+
+      - name: Point the download button at the newest pre-release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/set_download_link.py _site/index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
